@@ -1,0 +1,86 @@
+name: Build wgold - 2 DEBs
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Tweak
+        run: |
+          # your build command here
+          # example: make package
+
+      # ========== UNZIP BUNDLE ==========
+      - name: Unzip bundle
+        run: |
+          unzip WGold.bundle.zip -d .
+          # outputs: wgold.bundle/
+
+      # ========== ROOTFUL - arm | dylib + bundle ==========
+      - name: Create Rootful structure
+        run: |
+          mkdir -p wgold-rootful/DEBIAN
+          mkdir -p wgold-rootful/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p wgold-rootful/Library/Application\ Support/wgold
+
+      - name: Copy files Rootful
+        run: |
+          cp WGold.dylib wgold-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp WGold.plist wgold-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp -r WGold.bundle wgold-rootful/Library/Application\ Support/wgold/
+
+      - name: Create control Rootful
+        run: |
+          cat > wgold-rootful/DEBIAN/control << EOF
+          Package: com.whatsapp.wgold
+          Name: wgold - rootfull
+          Version: 2.1
+          Architecture: iphoneos-arm
+          Description: wgold tweak
+          Maintainer: Example
+          Section: Tweaks
+          Depends: mobilesubstrate
+          EOF
+
+      - name: Build Rootful DEB
+        run: dpkg-deb -b wgold-rootful wgold_2.1_iphoneos-arm.deb
+
+      # ========== ROOTLESS - arm64 | dylib + bundle ==========
+      - name: Create Rootless structure
+        run: |
+          mkdir -p wgold-rootless/DEBIAN
+          mkdir -p wgold-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p wgold-rootless/var/jb/Library/Application\ Support/wgold
+
+      - name: Copy files Rootless
+        run: |
+          cp WGold.dylib wgold-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp WGold.plist wgold-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp -r WGold.bundle wgold-rootless/var/jb/Library/Application\ Support/wgold/
+
+      - name: Create control Rootless
+        run: |
+          cat > wgold-rootless/DEBIAN/control << EOF
+          Package: com.whatsapp.wgold
+          Name: WGold (Rootless)
+          Version: 2.1
+          Architecture: iphoneos-arm64
+          Description: wgold tweak - Rootless
+          Maintainer: Example
+          Section: Tweaks
+          Depends: mobilesubstrate
+          
+      - name: Build Rootless DEB
+        run: dpkg-deb -b wgold-rootless wgold_2.1_rootless_iphoneos-arm64.deb
+
+         # ========== UPLOAD 2 DEBS ==========
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wgold-Universal
+          path: |
+            wgold_2.1_iphoneos-arm.deb
+            wgold_2.1_rootless_iphoneos-arm64.deb
