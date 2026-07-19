@@ -99,7 +99,7 @@ jobs:
          # ========== UPLOAD 2 DEBS ==========
       - uses: actions/upload-artifact@v4
         with:
-          name: tweak-Universal
+          name: tweak - rootfullrootless
           path: |
             ytkace_0.6.4_iphoneos-arm.deb
             ytkace_0.6.4_rootless_iphoneos-arm64.deb
