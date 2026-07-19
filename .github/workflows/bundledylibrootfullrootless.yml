@@ -101,5 +101,5 @@ jobs:
         with:
           name: tweak-Universal
           path: |
-            wgold_2.1_iphoneos-arm.deb
-            wgold_2.1_rootless_iphoneos-arm64.deb
+            ytkace_0.6.4_iphoneos-arm.deb
+            ytkace_0.6.4_rootless_iphoneos-arm64.deb
