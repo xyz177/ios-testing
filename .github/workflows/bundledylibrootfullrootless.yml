@@ -1,4 +1,4 @@
-name: Build wgold - 2 DEBs
+name: Build tweak - 2 DEBs
 on:
   push:
     branches: [ main ]
