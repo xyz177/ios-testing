@@ -1,4 +1,4 @@
-name: Build tweak - 2 DEBs + Artifacts
+name: Build tweak - Rootfull & Rootless + Release
 on:
   workflow_dispatch:
 
