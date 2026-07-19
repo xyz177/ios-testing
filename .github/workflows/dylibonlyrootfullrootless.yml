@@ -120,6 +120,7 @@ jobs:
           files: |
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+          body: ""
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
