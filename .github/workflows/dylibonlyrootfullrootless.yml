@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
 
 env:
-  TWEAK_NAME: tweak
-  PACKAGE_ID: com.example
+  TWEAK_NAME: YTDownloadManager
+  PACKAGE_ID: com.youtube.ytdm
   VERSION: 1.0.0
 
 jobs:
@@ -83,7 +83,7 @@ jobs:
           Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm64
           Description: ${{ env.TWEAK_NAME }} tweak for YouTube - Rootless dylib only
-          Maintainer: xyz177
+          Maintainer: joe
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
