@@ -1,7 +1,13 @@
-name: Build Tweak - Dylib Only
+name: Build tweak - dylib only
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+env:
+  TWEAK_NAME: tweak
+  PACKAGE_ID: com.example
+  VERSION: 1.0.0
 
 jobs:
   build:
@@ -9,15 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Tweak
-        run: |
-          # your build command here
-          # example: make package
+      - name: Check dylib exists
+        run: ls -la ${{ env.TWEAK_NAME }}.dylib
 
-# ========== GENERATE .plist  ==========
-      - name: Generate .plist
+      # ========== GENERATE ytkace.plist FOR YOUTUBE ==========
+      - name: Generate ${{ env.TWEAK_NAME }}.plist
         run: |
-          cat > wgold.plist << 'EOF'
+          cat > ${{ env.TWEAK_NAME }}.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -26,73 +30,73 @@ jobs:
               <dict>
                   <key>Bundles</key>
                   <array>
-                      <string>com.ios.springboard</string>
+                      <string>com.google.ios.youtube</string>
                   </array>
               </dict>
           </dict>
           </plist>
           EOF
 
-      # ========== ROOTFUL - arm ==========
-      - name: Create Rootful Dylib structure
+      # ========== ROOTFUL - dylib only ==========
+      - name: Create Rootful structure
         run: |
-          mkdir -p rootful-dylib/DEBIAN
-          mkdir -p rootful-dylib/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p ${{ env.TWEAK_NAME }}-rootful/DEBIAN
+          mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
 
-      - name: Copy files Rootful Dylib
+      - name: Copy files Rootful
         run: |
-          cp Example.dylib rootful-dylib/Library/MobileSubstrate/DynamicLibraries/
-          cp Example.plist rootful-dylib/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.dylib ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
 
-      - name: Create control Rootful Dylib
+      - name: Create control Rootful
         run: |
-          cat > rootful-dylib/DEBIAN/control << EOF
-          Package: com.example.tweak
-          Name: Example
-          Version: 1.0.0
+          cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
+          Package: ${{ env.PACKAGE_ID }}
+          Name: ${{ env.TWEAK_NAME }}
+          Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm
-          Description: Example tweak
-          Maintainer: Example
-          Author: Example
+          Description: ${{ env.TWEAK_NAME }} tweak for YouTube - dylib only
+          Maintainer: xyz177
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
 
-      - name: Build Rootful Dylib DEB
-        run: dpkg-deb -b rootful-dylib Example_1.0.0_iphoneos-arm.deb
+      - name: Build Rootful DEB
+        run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
-      # ========== ROOTLESS - arm64 ==========
-      - name: Create Rootless Dylib structure
+      # ========== ROOTLESS - dylib only ==========
+      - name: Create Rootless structure
         run: |
-          mkdir -p rootless-dylib/DEBIAN
-          mkdir -p rootless-dylib/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p ${{ env.TWEAK_NAME }}-rootless/DEBIAN
+          mkdir -p ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
 
-      - name: Copy files Rootless Dylib
+      - name: Copy files Rootless
         run: |
-          cp Example.dylib rootless-dylib/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp Example.plist rootless-dylib/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.dylib ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
 
-      - name: Create control Rootless Dylib
+      - name: Create control Rootless
         run: |
-          cat > rootless-dylib/DEBIAN/control << EOF
-          Package: com.example.tweak.rootless
-          Name: Example (Rootless)
-          Version: 1.0.0
+          cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/control << EOF
+          Package: ${{ env.PACKAGE_ID }}.rootless
+          Name: ${{ env.TWEAK_NAME }} (Rootless)
+          Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm64
-          Description: Example tweak - Rootless
-          Maintainer: Example
-          Author: Example
+          Description: ${{ env.TWEAK_NAME }} tweak for YouTube - Rootless dylib only
+          Maintainer: xyz177
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
 
-      - name: Build Rootless Dylib DEB
-        run: dpkg-deb -b rootless-dylib Example_1.0.0_rootless_iphoneos-arm64.deb
+      - name: Build Rootless DEB
+        run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
 
-      # ========== UPLOAD BOTH ==========
-      - uses: actions/upload-artifact@v4
+      # ========== UPLOAD TO ARTIFACTS ==========
+      - name: Upload DEBs
+        uses: actions/upload-artifact@v4
         with:
-          name: Example-Dylib-Universal
+          name: ${{ env.TWEAK_NAME }}-v${{ env.VERSION }}-dylib-only
           path: |
-            Example_1.0.0_iphoneos-arm.deb
-            Example_1.0.0_rootless_iphoneos-arm64.deb
+            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+          retention-days: 30
