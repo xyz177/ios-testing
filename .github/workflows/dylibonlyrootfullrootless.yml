@@ -115,7 +115,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag: YTDM
+          tag_name: YTDM
           name: ${{ env.TWEAK_NAME }} v${{ env.VERSION }}
           files: |
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
