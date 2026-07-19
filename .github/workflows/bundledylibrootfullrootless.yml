@@ -1,7 +1,5 @@
 name: Build tweak - 2 DEBs + Artifacts
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -102,11 +100,22 @@ jobs:
         run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
 
       # ========== UPLOAD TO ARTIFACTS ==========
-      - name: Upload DEBs
-        uses: actions/upload-artifact@v4
+      #- name: Upload DEBs
+      #  uses: actions/upload-artifact@v4
+      #  with:
+      #    name: ${{ env.TWEAK_NAME }}-v${{ env.VERSION }}-debs
+      #    path: |
+      #      ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+      #      ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+      #    retention-days: 1
+
+      # Upload to release
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ env.TWEAK_NAME }}-v${{ env.VERSION }}-debs
-          path: |
-            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
-            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
-          retention-days: 30
+          tag_name: v${{ github.run_number }}
+          name: ytkace v${{ github.run_number }}
+          files: packages/*.deb
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
