@@ -70,6 +70,11 @@ jobs:
       - name: Build Rootful DEB
         run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
+      - name: Fix DEB ownership and permissions
+        run: |
+          sudo chown $USER:$USER *.deb
+          chmod 644 *.deb
+          ls -l *.deb
       # ========== ROOTLESS ==========
       - name: Create Rootless structure
         run: |
@@ -98,6 +103,12 @@ jobs:
 
       - name: Build Rootless DEB
         run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+
+      - name: Fix DEB ownership and permissions
+        run: |
+          sudo chown $USER:$USER *.deb
+          chmod 644 *.deb
+          ls -l *.deb
 
       # ========== UPLOAD TO ARTIFACTS ==========
       #- name: Upload DEBs
