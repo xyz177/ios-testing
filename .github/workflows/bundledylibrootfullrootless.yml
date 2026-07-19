@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  TWEAK_NAME: YTKACe
+  TWEAK_NAME: YTKACE
   PACKAGE_ID: com.youtube.ytkace
   VERSION: 0.6.4
 
