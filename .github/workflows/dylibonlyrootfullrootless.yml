@@ -62,6 +62,12 @@ jobs:
       - name: Build Rootful DEB
         run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
+      - name: Fix DEB ownership and permissions
+        run: |
+          sudo chown $USER:$USER *.deb
+          chmod 644 *.deb
+          ls -l *.deb
+
       # ========== ROOTLESS - dylib only ==========
       - name: Create Rootless structure
         run: |
