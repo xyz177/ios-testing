@@ -1,19 +1,17 @@
-name: Build tweak - 2 DEBs + Release
+name: Build tweak - 2 DEBs + Artifacts
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
 env:
-  TWEAK_NAME: YTKACE
+  TWEAK_NAME: YTKACe
   PACKAGE_ID: com.youtube.ytkace
   VERSION: 0.6.4
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -103,14 +101,12 @@ jobs:
       - name: Build Rootless DEB
         run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
 
-      # ========== UPLOAD TO GITHUB RELEASE ==========
-      - name: Create Release and Upload DEBs
-        uses: softprops/action-gh-release@v2
+      # ========== UPLOAD TO ARTIFACTS ==========
+      - name: Upload DEBs
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v${{ env.VERSION }}
-          name: ${{ env.TWEAK_NAME }} v${{ env.VERSION }}
-          files: |
+          name: ${{ env.TWEAK_NAME }}-v${{ env.VERSION }}-debs
+          path: |
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
-          draft: false
-          prerelease: false
+          retention-days: 30
