@@ -17,7 +17,7 @@ jobs:
 # ========== GENERATE .plist ==========
       - name: Generate .plist
         run: |
-          cat > wgold.plist << 'EOF'
+          cat > YTKACE.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -26,7 +26,7 @@ jobs:
               <dict>
                   <key>Bundles</key>
                   <array>
-                      <string>com.ios.springboard</string>
+                      <string>com.google.ios.youtube</string>
                   </array>
               </dict>
           </dict>
@@ -36,70 +36,70 @@ jobs:
       # ========== UNZIP BUNDLE ==========
       - name: Unzip bundle
         run: |
-          unzip WGold.bundle.zip -d .
-          # outputs: wgold.bundle/
+          unzip YTKACE.bundle.zip -d .
+          # outputs: .bundle/
 
       # ========== ROOTFUL - arm | dylib + bundle ==========
       - name: Create Rootful structure
         run: |
-          mkdir -p wgold-rootful/DEBIAN
-          mkdir -p wgold-rootful/Library/MobileSubstrate/DynamicLibraries
-          mkdir -p wgold-rootful/Library/Application\ Support/wgold
+          mkdir -p tweak-rootful/DEBIAN
+          mkdir -p tweak-rootful/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p tweak-rootful/Library/Application\ Support/ytkace
 
       - name: Copy files Rootful
         run: |
-          cp WGold.dylib wgold-rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp WGold.plist wgold-rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp -r WGold.bundle wgold-rootful/Library/Application\ Support/wgold/
+          cp YTKACE.dylib tweak-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp YTKACE.plist tweak-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp -r YTKACE.bundle tweak-rootful/Library/Application\ Support/ytkace/
 
       - name: Create control Rootful
         run: |
-          cat > wgold-rootful/DEBIAN/control << EOF
-          Package: com.whatsapp.wgold
-          Name: wgold - rootfull
-          Version: 2.1
+          cat > tweak-rootful/DEBIAN/control << EOF
+          Package: com.youtube.ytkace
+          Name: YTKACE (rootfull)
+          Version: 0.6.4
           Architecture: iphoneos-arm
-          Description: wgold tweak
-          Maintainer: Example
+          Description: yt tweak
+          Maintainer: ace
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
 
       - name: Build Rootful DEB
-        run: dpkg-deb -b wgold-rootful wgold_2.1_iphoneos-arm.deb
+        run: dpkg-deb -b tweak-rootful ytkace_0.6.4_iphoneos-arm.deb
 
       # ========== ROOTLESS - arm64 | dylib + bundle ==========
       - name: Create Rootless structure
         run: |
-          mkdir -p wgold-rootless/DEBIAN
-          mkdir -p wgold-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
-          mkdir -p wgold-rootless/var/jb/Library/Application\ Support/wgold
+          mkdir -p tweak-rootless/DEBIAN
+          mkdir -p tweak-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p tweak-rootless/var/jb/Library/Application\ Support/wgold
 
       - name: Copy files Rootless
         run: |
-          cp WGold.dylib wgold-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp WGold.plist wgold-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp -r WGold.bundle wgold-rootless/var/jb/Library/Application\ Support/wgold/
+          cp YTKACE.dylib tweak-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp YTKACE.plist tweak-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp -r YTKACE.bundle tweak-rootless/var/jb/Library/Application\ Support/ytkace/
 
       - name: Create control Rootless
         run: |
-          cat > wgold-rootless/DEBIAN/control << EOF
-          Package: com.whatsapp.wgold
-          Name: WGold (Rootless)
-          Version: 2.1
+          cat > tweak-rootless/DEBIAN/control << EOF
+          Package: com.youtube.ytkace
+          Name: YTKACE (Rootless)
+          Version: 0.6.4
           Architecture: iphoneos-arm64
-          Description: wgold tweak - Rootless
-          Maintainer: Example
+          Description: yt tweak - Rootless
+          Maintainer: ace
           Section: Tweaks
           Depends: mobilesubstrate
           
       - name: Build Rootless DEB
-        run: dpkg-deb -b wgold-rootless wgold_2.1_rootless_iphoneos-arm64.deb
+        run: dpkg-deb -b tweak-rootless ytkace_0.6.4_rootless_iphoneos-arm64.deb
 
          # ========== UPLOAD 2 DEBS ==========
       - uses: actions/upload-artifact@v4
         with:
-          name: wgold-Universal
+          name: tweak-Universal
           path: |
             wgold_2.1_iphoneos-arm.deb
             wgold_2.1_rootless_iphoneos-arm64.deb
