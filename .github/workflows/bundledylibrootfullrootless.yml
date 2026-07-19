@@ -1,13 +1,13 @@
-name: Build tweak - 2 DEBs + Release
+name: Build ytkace - 2 DEBs + Release
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
 env:
-  TWEAK_NAME: YTKACE        # <- change this to rename everything
-  PACKAGE_ID: com.youtube.ytkace
-  VERSION: 0.6.4
+  TWEAK_NAME: ytkace
+  PACKAGE_ID: com.xyz177.ytkace
+  VERSION: 1.0.0
 
 jobs:
   build:
@@ -17,10 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Tweak
-        run: make package
+      - name: Check files exist
+        run: |
+          ls -la ${{ env.TWEAK_NAME }}.dylib
+          ls -la ${{ env.TWEAK_NAME }}.bundle.zip
 
-      # ========== GENERATE .plist ==========
+      # ========== GENERATE ytkace.plist FOR YOUTUBE ==========
       - name: Generate ${{ env.TWEAK_NAME }}.plist
         run: |
           cat > ${{ env.TWEAK_NAME }}.plist << 'EOF'
@@ -39,6 +41,7 @@ jobs:
           </plist>
           EOF
 
+      # ========== UNZIP BUNDLE ==========
       - name: Unzip bundle
         run: unzip ${{ env.TWEAK_NAME }}.bundle.zip -d .
 
@@ -62,8 +65,8 @@ jobs:
           Name: ${{ env.TWEAK_NAME }}
           Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm
-          Description: ${{ env.TWEAK_NAME }} tweak
-          Maintainer: ace
+          Description: ${{ env.TWEAK_NAME }} tweak for YouTube
+          Maintainer: xyz177
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
@@ -91,8 +94,8 @@ jobs:
           Name: ${{ env.TWEAK_NAME }} (Rootless)
           Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm64
-          Description: ${{ env.TWEAK_NAME }} tweak - Rootless
-          Maintainer: ace
+          Description: ${{ env.TWEAK_NAME }} tweak for YouTube - Rootless
+          Maintainer: xyz177
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
@@ -100,7 +103,7 @@ jobs:
       - name: Build Rootless DEB
         run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
 
-      # ========== UPLOAD ==========
+      # ========== UPLOAD TO GITHUB RELEASE ==========
       - name: Create Release and Upload DEBs
         uses: softprops/action-gh-release@v2
         with:
@@ -108,4 +111,6 @@ jobs:
           name: ${{ env.TWEAK_NAME }} v${{ env.VERSION }}
           files: |
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
-            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-
+            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+          draft: false
+          prerelease: false
