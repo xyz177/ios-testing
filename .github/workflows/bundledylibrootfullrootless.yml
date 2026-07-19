@@ -1,23 +1,29 @@
-name: Build tweak - 2 DEBs
+name: Build tweak - 2 DEBs + Release
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+env:
+  TWEAK_NAME: YTKACE        # <- change this to rename everything
+  PACKAGE_ID: com.youtube.ytkace
+  VERSION: 0.6.4
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Build Tweak
-        run: |
-          # your build command here
-          # example: make package
+        run: make package
 
-# ========== GENERATE .plist ==========
-      - name: Generate .plist
+      # ========== GENERATE .plist ==========
+      - name: Generate ${{ env.TWEAK_NAME }}.plist
         run: |
-          cat > YTKACE.plist << 'EOF'
+          cat > ${{ env.TWEAK_NAME }}.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -33,73 +39,73 @@ jobs:
           </plist>
           EOF
 
-      # ========== UNZIP BUNDLE ==========
       - name: Unzip bundle
-        run: |
-          unzip YTKACE.bundle.zip -d .
-          # outputs: .bundle/
+        run: unzip ${{ env.TWEAK_NAME }}.bundle.zip -d .
 
-      # ========== ROOTFUL - arm | dylib + bundle ==========
+      # ========== ROOTFUL ==========
       - name: Create Rootful structure
         run: |
-          mkdir -p tweak-rootful/DEBIAN
-          mkdir -p tweak-rootful/Library/MobileSubstrate/DynamicLibraries
-          mkdir -p tweak-rootful/Library/Application\ Support/ytkace
+          mkdir -p ${{ env.TWEAK_NAME }}-rootful/DEBIAN
+          mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}"
 
       - name: Copy files Rootful
         run: |
-          cp YTKACE.dylib tweak-rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp YTKACE.plist tweak-rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp -r YTKACE.bundle tweak-rootful/Library/Application\ Support/ytkace/
+          cp ${{ env.TWEAK_NAME }}.dylib ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
 
       - name: Create control Rootful
         run: |
-          cat > tweak-rootful/DEBIAN/control << EOF
-          Package: com.youtube.ytkace
-          Name: YTKACE (rootfull)
-          Version: 0.6.4
+          cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
+          Package: ${{ env.PACKAGE_ID }}
+          Name: ${{ env.TWEAK_NAME }}
+          Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm
-          Description: yt tweak
+          Description: ${{ env.TWEAK_NAME }} tweak
           Maintainer: ace
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
 
       - name: Build Rootful DEB
-        run: dpkg-deb -b tweak-rootful ytkace_0.6.4_iphoneos-arm.deb
+        run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
-      # ========== ROOTLESS - arm64 | dylib + bundle ==========
+      # ========== ROOTLESS ==========
       - name: Create Rootless structure
         run: |
-          mkdir -p tweak-rootless/DEBIAN
-          mkdir -p tweak-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
-          mkdir -p tweak-rootless/var/jb/Library/Application\ Support/wgold
+          mkdir -p ${{ env.TWEAK_NAME }}-rootless/DEBIAN
+          mkdir -p ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
 
       - name: Copy files Rootless
         run: |
-          cp YTKACE.dylib tweak-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp YTKACE.plist tweak-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp -r YTKACE.bundle tweak-rootless/var/jb/Library/Application\ Support/ytkace/
+          cp ${{ env.TWEAK_NAME }}.dylib ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
 
       - name: Create control Rootless
         run: |
-          cat > tweak-rootless/DEBIAN/control << EOF
-          Package: com.youtube.ytkace
-          Name: YTKACE (Rootless)
-          Version: 0.6.4
+          cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/control << EOF
+          Package: ${{ env.PACKAGE_ID }}.rootless
+          Name: ${{ env.TWEAK_NAME }} (Rootless)
+          Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm64
-          Description: yt tweak - Rootless
+          Description: ${{ env.TWEAK_NAME }} tweak - Rootless
           Maintainer: ace
           Section: Tweaks
           Depends: mobilesubstrate
-          
-      - name: Build Rootless DEB
-        run: dpkg-deb -b tweak-rootless ytkace_0.6.4_rootless_iphoneos-arm64.deb
+          EOF
 
-         # ========== UPLOAD 2 DEBS ==========
-      - uses: actions/upload-artifact@v4
+      - name: Build Rootless DEB
+        run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+
+      # ========== UPLOAD ==========
+      - name: Create Release and Upload DEBs
+        uses: softprops/action-gh-release@v2
         with:
-          name: tweak - rootfullrootless
-          path: |
-            ytkace_0.6.4_iphoneos-arm.deb
-            ytkace_0.6.4_rootless_iphoneos-arm64.deb
+          tag_name: v${{ env.VERSION }}
+          name: ${{ env.TWEAK_NAME }} v${{ env.VERSION }}
+          files: |
+            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-
