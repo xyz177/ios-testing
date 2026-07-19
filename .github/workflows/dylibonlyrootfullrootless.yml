@@ -1,4 +1,4 @@
-name: Build tweak - dylib only
+name: Build from dylib - Rootfull & Rootless + Release
 on:
   workflow_dispatch:
 
