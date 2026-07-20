@@ -1,0 +1,72 @@
+name: Extract XAPK to APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      xapk_url:
+        description: https://filecentre.hostish.site/fileshare/fileshare/RTMKlik_4.0.12_APKPure.xapk
+        required: true
+        type: string
+
+jobs:
+  extract:
+    name: Extract XAPK to APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y unzip curl
+
+      - name: Download XAPK
+        run: |
+          echo "Downloading from: ${{ github.event.inputs.xapk_url }}"
+          curl -L -o input.xapk "${{ github.event.inputs.xapk_url }}"
+          echo "Download complete. File size: $(du -sh input.xapk | cut -f1)"
+
+      - name: Extract XAPK
+        run: |
+          mkdir -p extracted output/apks output/obb
+
+          echo "Extracting XAPK..."
+          unzip -o input.xapk -d extracted/
+
+          echo ""
+          echo "Extracted contents:"
+          ls -lah extracted/
+
+          find extracted/ -name "*.apk" | while read apk; do
+            apkname=$(basename "$apk")
+            echo "Found APK: $apkname"
+            cp "$apk" "output/apks/$apkname"
+          done
+
+          find extracted/ -name "*.obb" | while read obb; do
+            obbname=$(basename "$obb")
+            echo "Found OBB: $obbname"
+            cp "$obb" "output/obb/$obbname"
+          done
+
+          echo ""
+          echo "APKs collected:"
+          ls -lah output/apks/ 2>/dev/null || echo "None"
+          echo "OBB collected:"
+          ls -lah output/obb/ 2>/dev/null || echo "None"
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-apks
+          path: output/apks/*.apk
+          if-no-files-found: error
+
+      - name: Upload OBB files
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-obb
+          path: output/obb/*.obb
+          if-no-files-found: ignore
