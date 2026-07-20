@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       xapk_url:
-        description: https://filecentre.hostish.site/fileshare/fileshare/RTMKlik_4.0.12_APKPure.xapk
+        description: 'file url'
         required: true
         type: string
 
