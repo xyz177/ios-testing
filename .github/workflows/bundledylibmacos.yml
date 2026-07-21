@@ -28,7 +28,7 @@ on:
         required: true
         default: 'YTKACE'
       dylib_files:
-        description: 'Space-separated list of dylib files (e.g., YTKACE.dylib libyt.dylib extra.dylib)'
+        description: 'Space-separated list of dylib files (e.g., YTKACE.dylib or YTKACE.dylib libyt.dylib)'
         required: true
         default: 'YTKACE.dylib'
       bundle_zips:
@@ -73,7 +73,7 @@ jobs:
         if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
         if [ -z "$DESCRIPTION" ]; then DESCRIPTION="Tweak for YouTube"; fi
         if [ -z "$TWEAK_NAME" ]; then TWEAK_NAME="YTKACE"; fi
-        if [ -z "$DYLIB_FILES" ]; then DYLIB_FILES="YTKACE.dylib libyt.dylib"; fi
+        if [ -z "$DYLIB_FILES" ]; then DYLIB_FILES="YTKACE.dylib"; fi
         if [ -z "$BUNDLE_ZIPS" ]; then BUNDLE_ZIPS="YTKACE.bundle.zip"; fi
         if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
         
@@ -170,6 +170,7 @@ jobs:
         echo "📦 Copying dylib files..."
         DYLIB_COUNT=0
         DYLIB_NAMES=""
+        MISSING_FILES=""
         
         IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
         
@@ -181,13 +182,19 @@ jobs:
             DYLIB_COUNT=$((DYLIB_COUNT + 1))
             DYLIB_NAMES="${DYLIB_NAMES}  - ${dylib}\n"
           else
-            echo "  ❌ ERROR: $dylib not found!"
-            exit 1
+            echo "  ⚠️  WARNING: $dylib not found! Skipping..."
+            MISSING_FILES="${MISSING_FILES}  - ${dylib}\n"
           fi
         done
         
+        if [ $DYLIB_COUNT -eq 0 ]; then
+          echo "  ❌ ERROR: No dylib files found to copy!"
+          exit 1
+        fi
+        
         echo "DYLIB_COUNT=${DYLIB_COUNT}" >> $GITHUB_ENV
         echo -e "DYLIB_NAMES=${DYLIB_NAMES}" >> $GITHUB_ENV
+        echo -e "MISSING_FILES=${MISSING_FILES}" >> $GITHUB_ENV
 
     - name: Copy bundle files
       run: |
@@ -232,32 +239,35 @@ jobs:
         IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
         
         for dylib in "${DYLIB_ARRAY[@]}"; do
-          DYLIB_NAME="${dylib%.dylib}"
-          PLIST_FILE="${DYLIB_NAME}.plist"
-          
-          echo "  Generating: $PLIST_FILE"
-          
-          # Create plist file
-          echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
-          echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
-          echo '<plist version="1.0">' >> "$PLIST_FILE"
-          echo '<dict>' >> "$PLIST_FILE"
-          echo '	<key>Filter</key>' >> "$PLIST_FILE"
-          echo '	<dict>' >> "$PLIST_FILE"
-          echo '		<key>Bundles</key>' >> "$PLIST_FILE"
-          echo '		<array>' >> "$PLIST_FILE"
-          echo "			<string>${BUNDLE_ID}</string>" >> "$PLIST_FILE"
-          echo '		</array>' >> "$PLIST_FILE"
-          echo '	</dict>' >> "$PLIST_FILE"
-          echo '</dict>' >> "$PLIST_FILE"
-          echo '</plist>' >> "$PLIST_FILE"
-          
-          cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
-          echo "  ✅ Generated: $PLIST_FILE"
-          
-          PLIST_COUNT=$((PLIST_COUNT + 1))
-          PLIST_NAMES="${PLIST_NAMES}  - ${PLIST_FILE}\n"
+          # Only generate plist if the dylib exists
+          if [ -f "$dylib" ]; then
+            DYLIB_NAME="${dylib%.dylib}"
+            PLIST_FILE="${DYLIB_NAME}.plist"
+            
+            echo "  Generating: $PLIST_FILE"
+            
+            # Create plist file
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
+            echo '<plist version="1.0">' >> "$PLIST_FILE"
+            echo '<dict>' >> "$PLIST_FILE"
+            echo '	<key>Filter</key>' >> "$PLIST_FILE"
+            echo '	<dict>' >> "$PLIST_FILE"
+            echo '		<key>Bundles</key>' >> "$PLIST_FILE"
+            echo '		<array>' >> "$PLIST_FILE"
+            echo "			<string>${BUNDLE_ID}</string>" >> "$PLIST_FILE"
+            echo '		</array>' >> "$PLIST_FILE"
+            echo '	</dict>' >> "$PLIST_FILE"
+            echo '</dict>' >> "$PLIST_FILE"
+            echo '</plist>' >> "$PLIST_FILE"
+            
+            cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+            cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+            echo "  ✅ Generated: $PLIST_FILE"
+            
+            PLIST_COUNT=$((PLIST_COUNT + 1))
+            PLIST_NAMES="${PLIST_NAMES}  - ${PLIST_FILE}\n"
+          fi
         done
         
         echo "PLIST_COUNT=${PLIST_COUNT}" >> $GITHUB_ENV
@@ -267,10 +277,15 @@ jobs:
       run: |
         echo "📊 Package summary:"
         echo "  - Tweak Name: $TWEAK_NAME"
-        echo "  - Dylib files: $DYLIB_COUNT"
+        echo "  - Dylib files copied: $DYLIB_COUNT"
         echo "  - Bundle files: $BUNDLE_COUNT"
-        echo "  - Plist files: $PLIST_COUNT"
+        echo "  - Plist files generated: $PLIST_COUNT"
         echo "  - Bundle ID: $BUNDLE_ID"
+        if [ -n "$MISSING_FILES" ]; then
+          echo ""
+          echo "⚠️  Missing files (skipped):"
+          echo -e "$MISSING_FILES"
+        fi
         echo ""
         echo "📂 Rootful package contents:"
         find $BUILD_DIR/rootful -type f | sed "s|$BUILD_DIR/rootful||" | sort
@@ -395,42 +410,9 @@ jobs:
         tag_name: ${{ env.TAG_NAME }}
         draft: false
         prerelease: false
-        generate_release_notes: true
+        generate_release_notes: false
         files: |
           ${{ env.DEB_DIR }}/*.deb
-        body: |
-          ## ${{ env.TWEAK_NAME }} v${{ env.PACKAGE_VERSION }}
-          
-          ### 📦 Package Details
-          - **Package:** `${{ env.PACKAGE_NAME }}`
-          - **Version:** `${{ env.PACKAGE_VERSION }}`
-          - **Bundle ID:** `${{ env.BUNDLE_ID }}`
-          
-          ### 📂 Files Included
-          
-          **Dylibs:**
-          ${{ env.DYLIB_NAMES }}
-          
-          **Bundles:**
-          ${{ env.BUNDLE_NAMES }}
-          
-          **Plist Files:**
-          ${{ env.PLIST_NAMES }}
-          
-          ### 📥 Installation
-          
-          **Rootful (iOS 11-14):**
-          ```bash
-          sudo dpkg -i ${{ env.TWEAK_NAME }}-${{ env.PACKAGE_VERSION }}-rootful.deb
-          ```
-          
-          **Rootless (iOS 15+):**
-          ```bash
-          sudo dpkg -i ${{ env.TWEAK_NAME }}-${{ env.PACKAGE_VERSION }}-rootless.deb
-          ```
-          
-          ### 🔄 Changes
-          - Automated build from GitHub Actions
-          - See commit history for detailed changes
+        body: ""
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
