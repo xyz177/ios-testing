@@ -1,10 +1,6 @@
 name: Build Jailbreak DEB (No Bundle)
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
     inputs:
       package_name:
