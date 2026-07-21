@@ -35,14 +35,17 @@ jobs:
           [ "${{ inputs.confirm }}" = "DELETE" ] || { echo "Aborted"; exit 1; }
 
       - name: Remove Files
-        uses: mdmush/remove-files@v1.0.1
-        with:
-          file-paths: ${{ steps.files.outputs.list }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            rm -rf "$file"
+            echo "Deleted: $file"
+          done <<< "${{ steps.files.outputs.list }}"
 
       - name: Commit and Push
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -A && git commit -m "delete files" && git push || echo "nothing to commit"
+          git add -A 
+          git commit -m "chore: delete files via workflow" || echo "No changes"
+          git push
