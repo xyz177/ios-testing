@@ -121,6 +121,7 @@ jobs:
         echo "  BUNDLE_ZIPS: $BUNDLE_ZIPS"
         echo "  BUNDLE_ID: $BUNDLE_ID"
         echo "  TWEAK_NAME: $TWEAK_NAME"
+        echo "  PACKAGE_VERSION: $PACKAGE_VERSION"
         echo "  TAG_NAME: $TAG_NAME"
         echo ""
         echo "📦 Checking if files exist:"
@@ -277,6 +278,8 @@ jobs:
       run: |
         echo "📊 Package summary:"
         echo "  - Tweak Name: $TWEAK_NAME"
+        echo "  - Package Version: $PACKAGE_VERSION"
+        echo "  - Tag Name: $TAG_NAME"
         echo "  - Dylib files copied: $DYLIB_COUNT"
         echo "  - Bundle files: $BUNDLE_COUNT"
         echo "  - Plist files generated: $PLIST_COUNT"
@@ -383,11 +386,11 @@ jobs:
 
     - name: Build rootful DEB package
       run: |
-        dpkg-deb -b $BUILD_DIR/rootful $DEB_DIR/${PACKAGE_NAME}_${PACKAGE_VERSION}_iphoneos-arm.deb
+        dpkg-deb -b $BUILD_DIR/rootful $DEB_DIR/${TWEAK_NAME}_${PACKAGE_VERSION}_iphoneos-arm.deb
 
     - name: Build rootless DEB package
       run: |
-        dpkg-deb -b $BUILD_DIR/rootless $DEB_DIR/${PACKAGE_NAME}_${PACKAGE_VERSION}_iphoneos-arm64.deb
+        dpkg-deb -b $BUILD_DIR/rootless $DEB_DIR/${TWEAK_NAME}_${PACKAGE_VERSION}_iphoneos-arm64.deb
 
     - name: List built packages
       run: |
@@ -396,11 +399,12 @@ jobs:
         echo ""
         echo "📊 Package statistics:"
         echo "  - Tweak Name: $TWEAK_NAME"
+        echo "  - Package Version: $PACKAGE_VERSION"
+        echo "  - Tag Name: $TAG_NAME"
         echo "  - Dylibs included: $DYLIB_COUNT"
         echo "  - Bundles included: $BUNDLE_COUNT"
         echo "  - Plists generated: $PLIST_COUNT"
         echo "  - Bundle ID: $BUNDLE_ID"
-        echo "  - Tag Name: $TAG_NAME"
         echo "  - Total package size: $(du -sh $DEB_DIR/ | cut -f1)"
 
     - name: Create Release
@@ -410,7 +414,7 @@ jobs:
         tag_name: ${{ env.TAG_NAME }}
         draft: false
         prerelease: false
-        generate_release_notes: false
+        generate_release_notes: true
         files: |
           ${{ env.DEB_DIR }}/*.deb
         body: ""
