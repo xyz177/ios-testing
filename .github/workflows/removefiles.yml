@@ -1,4 +1,4 @@
-name: Delete Files Manually
+name: Delete Multiple Files
 on:
   workflow_dispatch:
     inputs:
