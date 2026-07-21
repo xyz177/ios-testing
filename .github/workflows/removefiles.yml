@@ -6,10 +6,7 @@ on:
         description: 'List files/folders to delete. One per line'
         required: true
         type: string
-        default: |
-          bro.txt
-          test.log
-          temp/
+        default: ''
       confirm:
         description: 'Type DELETE to confirm'
         required: true
