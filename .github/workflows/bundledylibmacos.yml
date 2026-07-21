@@ -1,0 +1,400 @@
+name: Build Jailbreak DEB
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: 'Package identifier (e.g., com.yourrepo.example)'
+        required: true
+        default: 'com.youtube.ytkace'
+      package_version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: true
+        default: '0.6.5'
+      maintainer:
+        description: 'Maintainer name and email'
+        required: true
+        default: 'ace'
+      description:
+        description: 'Package description'
+        required: true
+        default: 'Tweak for YouTube'
+      tweak_name:
+        description: 'Main tweak name (for control file)'
+        required: true
+        default: 'YTKACE'
+      dylib_files:
+        description: 'Space-separated list of dylib files (e.g., YTKACE.dylib libyt.dylib)'
+        required: true
+        default: 'YTKACE.dylib'
+      bundle_zips:
+        description: 'Space-separated list of bundle zip files (e.g., YTKACE.bundle.zip)'
+        required: true
+        default: 'YTKACE.bundle.zip'
+      plist_filter:
+        description: 'Filter plist (e.g., com.yourcompany.) - leave empty for none'
+        required: false
+        default: 'com.google.ios.youtube'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set environment variables
+      run: |
+        PACKAGE_NAME="${{ github.event.inputs.package_name || 'com.example.ytkace' }}"
+        PACKAGE_VERSION="${{ github.event.inputs.package_version || '1.0.0' }}"
+        MAINTAINER="${{ github.event.inputs.maintainer || 'Your Name <email@example.com>' }}"
+        DESCRIPTION="${{ github.event.inputs.description || 'Tweak for YouTube' }}"
+        TWEAK_NAME="${{ github.event.inputs.tweak_name || 'YTKACE' }}"
+        DYLIB_FILES="${{ github.event.inputs.dylib_files || 'YTKACE.dylib libyt.dylib' }}"
+        BUNDLE_ZIPS="${{ github.event.inputs.bundle_zips || 'YTKACE.bundle.zip' }}"
+        PLIST_FILTER="${{ github.event.inputs.plist_filter || '' }}"
+        
+        echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+        echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> $GITHUB_ENV
+        echo "MAINTAINER=${MAINTAINER}" >> $GITHUB_ENV
+        echo "DESCRIPTION=${DESCRIPTION}" >> $GITHUB_ENV
+        echo "TWEAK_NAME=${TWEAK_NAME}" >> $GITHUB_ENV
+        echo "DYLIB_FILES=${DYLIB_FILES}" >> $GITHUB_ENV
+        echo "BUNDLE_ZIPS=${BUNDLE_ZIPS}" >> $GITHUB_ENV
+        echo "PLIST_FILTER=${PLIST_FILTER}" >> $GITHUB_ENV
+        echo "BUILD_DIR=$(pwd)/build" >> $GITHUB_ENV
+        echo "DEB_DIR=$(pwd)/debs" >> $GITHUB_ENV
+        echo "EXTRACT_DIR=$(pwd)/extracted" >> $GITHUB_ENV
+
+    - name: Create build directories
+      run: |
+        mkdir -p $BUILD_DIR
+        mkdir -p $DEB_DIR
+        mkdir -p $EXTRACT_DIR
+        mkdir -p $BUILD_DIR/rootful/DEBIAN
+        mkdir -p $BUILD_DIR/rootless/DEBIAN
+
+    - name: List all files (debug)
+      run: |
+        echo "📂 Files in repository:"
+        ls -la
+        echo ""
+        echo "📦 User-defined dylib files: $DYLIB_FILES"
+        echo "📦 User-defined bundle zips: $BUNDLE_ZIPS"
+        echo "📦 Plist filter: $PLIST_FILTER"
+
+    - name: Extract specified bundle zip files
+      run: |
+        echo "📦 Extracting specified .bundle.zip files..."
+        
+        IFS=' ' read -ra ZIP_ARRAY <<< "$BUNDLE_ZIPS"
+        
+        for zip in "${ZIP_ARRAY[@]}"; do
+          if [ -f "$zip" ]; then
+            echo "  Extracting: $zip"
+            unzip -q "$zip" -d $EXTRACT_DIR/
+            echo "  ✅ Extracted: $zip"
+          else
+            echo "  ⚠️  WARNING: $zip not found!"
+          fi
+        done
+        
+        echo ""
+        echo "📂 Extracted bundle directories:"
+        find $EXTRACT_DIR -type d -name "*.bundle" 2>/dev/null | sed 's|.*/||' || echo "  (none)"
+
+    - name: Copy specified dylib files
+      run: |
+        # Create necessary directories
+        mkdir -p $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries
+        mkdir -p $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries
+        
+        echo "📦 Copying specified dylib files..."
+        DYLIB_COUNT=0
+        DYLIB_NAMES=""
+        
+        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
+        
+        for dylib in "${DYLIB_ARRAY[@]}"; do
+          if [ -f "$dylib" ]; then
+            cp "$dylib" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+            cp "$dylib" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+            echo "  ✅ Copied: $dylib"
+            DYLIB_COUNT=$((DYLIB_COUNT + 1))
+            DYLIB_NAMES="${DYLIB_NAMES}  - ${dylib}\n"
+          else
+            echo "  ⚠️  WARNING: $dylib not found!"
+          fi
+        done
+        echo "DYLIB_COUNT=${DYLIB_COUNT}" >> $GITHUB_ENV
+        echo -e "DYLIB_NAMES=${DYLIB_NAMES}" >> $GITHUB_ENV
+
+    - name: Copy specified bundle files
+      run: |
+        # Create necessary directories
+        mkdir -p $BUILD_DIR/rootful/Library/PreferenceBundles
+        mkdir -p $BUILD_DIR/rootless/Library/PreferenceBundles
+        
+        echo "📦 Copying specified bundle files..."
+        BUNDLE_COUNT=0
+        BUNDLE_NAMES=""
+        
+        IFS=' ' read -ra ZIP_ARRAY <<< "$BUNDLE_ZIPS"
+        
+        for zip in "${ZIP_ARRAY[@]}"; do
+          BUNDLE_NAME="${zip%.zip}"
+          FOUND_BUNDLE=$(find $EXTRACT_DIR -type d -name "$BUNDLE_NAME" 2>/dev/null | head -n 1)
+          
+          if [ -n "$FOUND_BUNDLE" ] && [ -d "$FOUND_BUNDLE" ]; then
+            cp -r "$FOUND_BUNDLE" $BUILD_DIR/rootful/Library/PreferenceBundles/
+            cp -r "$FOUND_BUNDLE" $BUILD_DIR/rootless/Library/PreferenceBundles/
+            echo "  ✅ Copied bundle: $BUNDLE_NAME"
+            BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+            BUNDLE_NAMES="${BUNDLE_NAMES}  - ${BUNDLE_NAME}\n"
+          else
+            ANY_BUNDLE=$(find $EXTRACT_DIR -type d -name "*.bundle" 2>/dev/null | head -n 1)
+            if [ -n "$ANY_BUNDLE" ]; then
+              cp -r "$ANY_BUNDLE" $BUILD_DIR/rootful/Library/PreferenceBundles/
+              cp -r "$ANY_BUNDLE" $BUILD_DIR/rootless/Library/PreferenceBundles/
+              BUNDLE_NAME=$(basename "$ANY_BUNDLE")
+              echo "  ✅ Copied bundle: $BUNDLE_NAME (from $zip)"
+              BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+              BUNDLE_NAMES="${BUNDLE_NAMES}  - ${BUNDLE_NAME} (from ${zip})\n"
+            else
+              echo "  ⚠️  WARNING: No bundle found for $zip!"
+            fi
+          fi
+        done
+        
+        echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
+        echo -e "BUNDLE_NAMES=${BUNDLE_NAMES}" >> $GITHUB_ENV
+
+    - name: Generate plist files automatically
+      run: |
+        # Create necessary directories
+        mkdir -p $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries
+        mkdir -p $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries
+        
+        echo "📦 Generating plist files automatically..."
+        PLIST_COUNT=0
+        PLIST_NAMES=""
+        
+        # Get filter prefix if provided
+        FILTER="$PLIST_FILTER"
+        
+        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
+        
+        for dylib in "${DYLIB_ARRAY[@]}"; do
+          # Get dylib name without extension
+          DYLIB_NAME="${dylib%.dylib}"
+          PLIST_FILE="${DYLIB_NAME}.plist"
+          
+          # Check if plist already exists in repo
+          if [ -f "$PLIST_FILE" ]; then
+            # Use existing plist
+            cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+            cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+            echo "  ✅ Using existing: $PLIST_FILE"
+          else
+            # Generate plist
+            echo "  Generating plist for: $DYLIB_NAME"
+            
+            # Determine filter string
+            if [ -n "$FILTER" ]; then
+              FILTER_STRING="$FILTER"
+            else
+              FILTER_STRING="com.yourcompany."
+            fi
+            
+            cat > "$PLIST_FILE" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Filter</key>
+	<dict>
+		<key>Bundles</key>
+		<array>
+			<string>${FILTER_STRING}${DYLIB_NAME}</string>
+		</array>
+	</dict>
+</dict>
+</plist>
+EOF
+            
+            cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+            cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+            echo "  ✅ Generated: $PLIST_FILE"
+          fi
+          
+          PLIST_COUNT=$((PLIST_COUNT + 1))
+          PLIST_NAMES="${PLIST_NAMES}  - ${PLIST_FILE}\n"
+        done
+        
+        echo "PLIST_COUNT=${PLIST_COUNT}" >> $GITHUB_ENV
+        echo -e "PLIST_NAMES=${PLIST_NAMES}" >> $GITHUB_ENV
+
+    - name: Show package contents
+      run: |
+        echo "📊 Package summary:"
+        echo "  - Dylib files: $DYLIB_COUNT"
+        echo "  - Bundle files: $BUNDLE_COUNT"
+        echo "  - Plist files generated: $PLIST_COUNT"
+        echo ""
+        echo "📂 Rootful package contents:"
+        find $BUILD_DIR/rootful -type f | sed "s|$BUILD_DIR/rootful||" | sort || echo "  (empty)"
+        echo ""
+        echo "📂 Rootless package contents:"
+        find $BUILD_DIR/rootless -type f | sed "s|$BUILD_DIR/rootless||" | sort || echo "  (empty)"
+
+    - name: Create rootful DEBIAN control file
+      run: |
+        cat > $BUILD_DIR/rootful/DEBIAN/control << EOF
+        Package: ${{ env.PACKAGE_NAME }}
+        Version: ${{ env.PACKAGE_VERSION }}
+        Section: Tweaks
+        Priority: optional
+        Architecture: iphoneos-arm
+        Maintainer: ${{ env.MAINTAINER }}
+        Depends: firmware (>= 11.0), mobilesubstrate (>= 0.9.5000)
+        Description: ${{ env.DESCRIPTION }}
+        Name: ${{ env.TWEAK_NAME }}
+        Author: ${{ env.MAINTAINER }}
+        Installed-Size: $(du -sk $BUILD_DIR/rootful | cut -f1)
+        EOF
+
+    - name: Create rootless DEBIAN control file
+      run: |
+        cat > $BUILD_DIR/rootless/DEBIAN/control << EOF
+        Package: ${{ env.PACKAGE_NAME }}
+        Version: ${{ env.PACKAGE_VERSION }}
+        Section: Tweaks
+        Priority: optional
+        Architecture: iphoneos-arm64
+        Maintainer: ${{ env.MAINTAINER }}
+        Depends: firmware (>= 11.0), ellekit (>= 1.0.0)
+        Description: ${{ env.DESCRIPTION }} (Rootless)
+        Name: ${{ env.TWEAK_NAME }}
+        Author: ${{ env.MAINTAINER }}
+        Installed-Size: $(du -sk $BUILD_DIR/rootless | cut -f1)
+        EOF
+
+    - name: Create rootful postinst script
+      run: |
+        cat > $BUILD_DIR/rootful/DEBIAN/postinst << 'EOF'
+        #!/bin/sh
+        
+        echo "Setting permissions for all dylib files..."
+        for dylib in /Library/MobileSubstrate/DynamicLibraries/*.dylib; do
+            if [ -f "$dylib" ]; then
+                chmod 755 "$dylib"
+                echo "  ✅ $(basename $dylib)"
+            fi
+        done
+        
+        echo "Setting permissions for all bundle files..."
+        for bundle in /Library/PreferenceBundles/*.bundle; do
+            if [ -d "$bundle" ]; then
+                chmod 755 "$bundle"
+                find "$bundle" -type f -exec chmod 644 {} \; 2>/dev/null
+                echo "  ✅ $(basename $bundle)"
+            fi
+        done
+        
+        echo "Respring SpringBoard..."
+        killall -9 SpringBoard 2>/dev/null || true
+        exit 0
+        EOF
+        chmod 755 $BUILD_DIR/rootful/DEBIAN/postinst
+
+    - name: Create rootless postinst script
+      run: |
+        cat > $BUILD_DIR/rootless/DEBIAN/postinst << 'EOF'
+        #!/bin/sh
+        
+        echo "Setting permissions for all dylib files..."
+        for dylib in /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib; do
+            if [ -f "$dylib" ]; then
+                chmod 755 "$dylib"
+                echo "  ✅ $(basename $dylib)"
+            fi
+        done
+        
+        echo "Setting permissions for all bundle files..."
+        for bundle in /var/jb/Library/PreferenceBundles/*.bundle; do
+            if [ -d "$bundle" ]; then
+                chmod 755 "$bundle"
+                find "$bundle" -type f -exec chmod 644 {} \; 2>/dev/null
+                echo "  ✅ $(basename $bundle)"
+            fi
+        done
+        
+        echo "Respring SpringBoard..."
+        killall -9 SpringBoard 2>/dev/null || true
+        exit 0
+        EOF
+        chmod 755 $BUILD_DIR/rootless/DEBIAN/postinst
+
+    - name: Build rootful DEB package
+      run: |
+        dpkg-deb -b $BUILD_DIR/rootful $DEB_DIR/${PACKAGE_NAME}_${PACKAGE_VERSION}_iphoneos-arm.deb
+
+    - name: Build rootless DEB package
+      run: |
+        dpkg-deb -b $BUILD_DIR/rootless $DEB_DIR/${PACKAGE_NAME}_${PACKAGE_VERSION}_iphoneos-arm64.deb
+
+    - name: List built packages
+      run: |
+        echo "📦 Built packages:"
+        ls -la $DEB_DIR/
+        echo ""
+        echo "📊 Package statistics:"
+        echo "  - Dylibs included: $DYLIB_COUNT"
+        echo "  - Bundles included: $BUNDLE_COUNT"
+        echo "  - Plists generated: $PLIST_COUNT"
+        echo "  - Total package size: $(du -sh $DEB_DIR/ | cut -f1)"
+
+    - name: Upload rootful DEB
+      uses: actions/upload-artifact@v4
+      with:
+        name: rootful-${PACKAGE_NAME}-${PACKAGE_VERSION}
+        path: ${{ env.DEB_DIR }}/*_iphoneos-arm.deb
+
+    - name: Upload rootless DEB
+      uses: actions/upload-artifact@v4
+      with:
+        name: rootless-${PACKAGE_NAME}-${PACKAGE_VERSION}
+        path: ${{ env.DEB_DIR }}/*_iphoneos-arm64.deb
+
+    - name: Create release
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: YTKACE
+        files: |
+          ${{ env.DEB_DIR }}/*.deb
+        name: ${{ env.TWEAK_NAME }} v${{ env.PACKAGE_VERSION }}
+        body: |
+          ## ${{ env.TWEAK_NAME }} v${{ env.PACKAGE_VERSION }}
+          
+          ### Files included:
+          
+          **Dylibs:**
+          ${{ env.DYLIB_NAMES }}
+          
+          **Bundles:**
+          ${{ env.BUNDLE_NAMES }}
+          
+          **Plist files (auto-generated):**
+          ${{ env.PLIST_NAMES }}
+          
+          ### Installation:
+          - **Rootful (iOS 11-14)**: Install `*_iphoneos-arm.deb`
+          - **Rootless (iOS 15+)**: Install `*_iphoneos-arm64.deb`
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
