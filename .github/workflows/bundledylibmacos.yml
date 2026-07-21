@@ -10,7 +10,7 @@ on:
       package_name:
         description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.youtube.ytkace'
+        default: 'com.yt.ytkace'
       package_version:
         description: 'Package version (e.g., 1.0.0)'
         required: true
@@ -18,7 +18,7 @@ on:
       maintainer:
         description: 'Maintainer name and email'
         required: true
-        default: 'ace'
+        default: 'Your Name <email@example.com>'
       description:
         description: 'Package description'
         required: true
@@ -46,29 +46,47 @@ jobs:
 
     - name: Set environment variables
       run: |
-        echo "PACKAGE_NAME=${{ github.event.inputs.package_name }}" >> $GITHUB_ENV
-        echo "PACKAGE_VERSION=${{ github.event.inputs.package_version }}" >> $GITHUB_ENV
-        echo "MAINTAINER=${{ github.event.inputs.maintainer }}" >> $GITHUB_ENV
-        echo "DESCRIPTION=${{ github.event.inputs.description }}" >> $GITHUB_ENV
-        echo "DYLIB_FILE=${{ github.event.inputs.dylib_file }}" >> $GITHUB_ENV
-        echo "BUNDLE_ZIP=${{ github.event.inputs.bundle_zip }}" >> $GITHUB_ENV
-        echo "BUNDLE_ID=${{ github.event.inputs.bundle_id }}" >> $GITHUB_ENV
+        # Get inputs with fallbacks
+        PACKAGE_NAME="${{ github.event.inputs.package_name }}"
+        PACKAGE_VERSION="${{ github.event.inputs.package_version }}"
+        MAINTAINER="${{ github.event.inputs.maintainer }}"
+        DESCRIPTION="${{ github.event.inputs.description }}"
+        DYLIB_FILE="${{ github.event.inputs.dylib_file }}"
+        BUNDLE_ZIP="${{ github.event.inputs.bundle_zip }}"
+        BUNDLE_ID="${{ github.event.inputs.bundle_id }}"
+        
+        # Fallback defaults if inputs are empty
+        if [ -z "$PACKAGE_NAME" ]; then PACKAGE_NAME="com.example.ytkace"; fi
+        if [ -z "$PACKAGE_VERSION" ]; then PACKAGE_VERSION="1.0.0"; fi
+        if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
+        if [ -z "$DESCRIPTION" ]; then DESCRIPTION="Tweak for YouTube"; fi
+        if [ -z "$DYLIB_FILE" ]; then DYLIB_FILE="YTKACE.dylib"; fi
+        if [ -z "$BUNDLE_ZIP" ]; then BUNDLE_ZIP="YTKACE.bundle.zip"; fi
+        if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
+        
+        # Extract tweak name from dylib file
+        TWEAK_NAME="${DYLIB_FILE%.dylib}"
+        
+        # Export all variables
+        echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+        echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> $GITHUB_ENV
+        echo "MAINTAINER=${MAINTAINER}" >> $GITHUB_ENV
+        echo "DESCRIPTION=${DESCRIPTION}" >> $GITHUB_ENV
+        echo "DYLIB_FILE=${DYLIB_FILE}" >> $GITHUB_ENV
+        echo "BUNDLE_ZIP=${BUNDLE_ZIP}" >> $GITHUB_ENV
+        echo "BUNDLE_ID=${BUNDLE_ID}" >> $GITHUB_ENV
+        echo "TWEAK_NAME=${TWEAK_NAME}" >> $GITHUB_ENV
         echo "BUILD_DIR=$(pwd)/build" >> $GITHUB_ENV
         echo "DEB_DIR=$(pwd)/debs" >> $GITHUB_ENV
         echo "EXTRACT_DIR=$(pwd)/extracted" >> $GITHUB_ENV
         
-        # Extract tweak name from dylib file
-        DYLIB_INPUT="${{ github.event.inputs.dylib_file }}"
-        TWEAK_NAME="${DYLIB_INPUT%.dylib}"
-        echo "TWEAK_NAME=${TWEAK_NAME}" >> $GITHUB_ENV
-        
         echo "📊 Configuration:"
-        echo "  Package Name: ${{ github.event.inputs.package_name }}"
-        echo "  Package Version: ${{ github.event.inputs.package_version }}"
-        echo "  Tweak Name: $TWEAK_NAME (from dylib)"
-        echo "  Dylib File: ${{ github.event.inputs.dylib_file }}"
-        echo "  Bundle Zip: ${{ github.event.inputs.bundle_zip }}"
-        echo "  Bundle ID: ${{ github.event.inputs.bundle_id }}"
+        echo "  Package Name: ${PACKAGE_NAME}"
+        echo "  Package Version: ${PACKAGE_VERSION}"
+        echo "  Tweak Name: ${TWEAK_NAME} (from dylib)"
+        echo "  Dylib File: ${DYLIB_FILE}"
+        echo "  Bundle Zip: ${BUNDLE_ZIP}"
+        echo "  Bundle ID: ${BUNDLE_ID}"
 
     - name: Create build directories
       run: |
@@ -83,22 +101,38 @@ jobs:
         echo "📂 Files in repository:"
         ls -la
         echo ""
-        echo "📦 Dylib file: $DYLIB_FILE"
-        echo "📦 Bundle zip: $BUNDLE_ZIP"
-        echo "📦 Bundle ID: $BUNDLE_ID"
-        echo "📦 Tweak name: $TWEAK_NAME"
+        echo "📦 Environment variables:"
+        echo "  DYLIB_FILE: $DYLIB_FILE"
+        echo "  BUNDLE_ZIP: $BUNDLE_ZIP"
+        echo "  BUNDLE_ID: $BUNDLE_ID"
+        echo "  TWEAK_NAME: $TWEAK_NAME"
+        echo ""
+        echo "📦 Checking if files exist:"
+        if [ -f "$DYLIB_FILE" ]; then echo "  ✅ $DYLIB_FILE exists"; else echo "  ❌ $DYLIB_FILE NOT found"; fi
+        if [ -f "$BUNDLE_ZIP" ]; then echo "  ✅ $BUNDLE_ZIP exists"; else echo "  ❌ $BUNDLE_ZIP NOT found"; fi
 
     - name: Extract bundle zip
       run: |
         echo "📦 Extracting $BUNDLE_ZIP..."
         
-        if [ -f "$BUNDLE_ZIP" ]; then
-          unzip -q "$BUNDLE_ZIP" -d $EXTRACT_DIR/
-          echo "  ✅ Extracted: $BUNDLE_ZIP"
-        else
-          echo "  ⚠️  WARNING: $BUNDLE_ZIP not found!"
+        # Check if BUNDLE_ZIP is empty
+        if [ -z "$BUNDLE_ZIP" ]; then
+          echo "  ❌ ERROR: BUNDLE_ZIP is empty!"
+          echo "  Please set bundle_zip input"
           exit 1
         fi
+        
+        # Check if file exists
+        if [ ! -f "$BUNDLE_ZIP" ]; then
+          echo "  ❌ ERROR: $BUNDLE_ZIP not found!"
+          echo "  Available files:"
+          ls -la *.zip 2>/dev/null || echo "  No zip files found"
+          exit 1
+        fi
+        
+        # Extract the zip
+        unzip -q "$BUNDLE_ZIP" -d $EXTRACT_DIR/
+        echo "  ✅ Extracted: $BUNDLE_ZIP"
         
         echo ""
         echo "📂 Extracted bundle directories:"
@@ -117,7 +151,9 @@ jobs:
           cp "$DYLIB_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
           echo "  ✅ Copied: $DYLIB_FILE"
         else
-          echo "  ⚠️  ERROR: $DYLIB_FILE not found!"
+          echo "  ❌ ERROR: $DYLIB_FILE not found!"
+          echo "  Available files:"
+          ls -la *.dylib 2>/dev/null || echo "  No dylib files found"
           exit 1
         fi
 
@@ -138,7 +174,9 @@ jobs:
           cp -r "$ANY_BUNDLE" $BUILD_DIR/rootless/Library/PreferenceBundles/
           echo "  ✅ Copied bundle: $BUNDLE_NAME"
         else
-          echo "  ⚠️  ERROR: No .bundle found in extracted files!"
+          echo "  ❌ ERROR: No .bundle found in extracted files!"
+          echo "  Extracted directory contents:"
+          find $EXTRACT_DIR -type f 2>/dev/null | head -20
           exit 1
         fi
 
