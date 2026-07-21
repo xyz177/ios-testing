@@ -1,9 +1,9 @@
-name: Delete Multiple Files
+name: Delete Files Manually
 on:
   workflow_dispatch:
     inputs:
       files_to_delete:
-        description: 'List files/folders to delete. One per line'
+        description: 'List files to delete, separated by commas. Ex: bro.txt, test.log, build/'
         required: true
         type: string
         default: ''
@@ -19,13 +19,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Convert commas to new lines
+        id: files
+        run: echo "list=$(echo '${{ inputs.files_to_delete }}' | tr ',' '\n')" >> $GITHUB_OUTPUT
+
+      - name: Show what will be deleted
+        run: |
+          echo "Files marked for deletion:"
+          echo "${{ steps.files.outputs.list }}"
+          [ "${{ inputs.confirm }}" = "DELETE" ] || { echo "Aborted"; exit 1; }
+
       - name: Remove Files
         uses: mdmush/remove-files@v1.0.1
         with:
-          file-paths: ${{ inputs.files_to_delete }}
+          file-paths: ${{ steps.files.outputs.list }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Commit
+
+      - name: Commit and Push
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
