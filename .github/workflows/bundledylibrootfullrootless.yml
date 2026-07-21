@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
 
 env:
-  TWEAK_NAME: YTKACE
-  PACKAGE_ID: com.youtube.ytkace
-  VERSION: 0.6.5
+  TWEAK_NAME: YTLite
+  PACKAGE_ID: com.dvntdm.ytlite
+  VERSION: 5.2.2
 
 jobs:
   build:
