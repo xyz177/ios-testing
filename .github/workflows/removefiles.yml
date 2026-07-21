@@ -1,4 +1,4 @@
-name: Delete Files Manually
+name: Delete Multiple Files
 on:
   workflow_dispatch:
     inputs:
@@ -22,7 +22,11 @@ jobs:
 
       - name: Convert commas to new lines
         id: files
-        run: echo "list=$(echo '${{ inputs.files_to_delete }}' | tr ',' '\n')" >> $GITHUB_OUTPUT
+        run: |
+          list=$(echo '${{ inputs.files_to_delete }}' | tr ',' '\n' | sed 's/^ *//;s/ *$//')
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          echo "$list" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Show what will be deleted
         run: |
