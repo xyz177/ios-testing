@@ -8,17 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: 'Package identifier (e.g., com.yourrepo.example)'
+        description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.youtube.ytkace'
+        default: 'com.example.ytkace'
       package_version:
         description: 'Package version (e.g., 1.0.0)'
         required: true
-        default: '0.6.5'
+        default: '1.0.0'
       maintainer:
         description: 'Maintainer name and email'
         required: true
-        default: 'ace'
+        default: 'Your Name <email@example.com>'
       description:
         description: 'Package description'
         required: true
@@ -30,15 +30,15 @@ on:
       dylib_files:
         description: 'Space-separated list of dylib files (e.g., YTKACE.dylib libyt.dylib)'
         required: true
-        default: 'YTKACE.dylib'
+        default: 'YTKACE.dylib libyt.dylib'
       bundle_zips:
         description: 'Space-separated list of bundle zip files (e.g., YTKACE.bundle.zip)'
         required: true
         default: 'YTKACE.bundle.zip'
       plist_filter:
-        description: 'Filter plist (e.g., com.yourcompany.) - leave empty for none'
+        description: 'Filter plist (e.g., com.google.ios.youtube) - leave empty for none'
         required: false
-        default: 'com.google.ios.youtube'
+        default: ''
 
 jobs:
   build:
@@ -211,21 +211,20 @@ jobs:
               FILTER_STRING="com.yourcompany."
             fi
             
-            cat > "$PLIST_FILE" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>Filter</key>
-	<dict>
-		<key>Bundles</key>
-		<array>
-			<string>${FILTER_STRING}${DYLIB_NAME}</string>
-		</array>
-	</dict>
-</dict>
-</plist>
-EOF
+            # Create plist file using echo with proper escaping
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
+            echo '<plist version="1.0">' >> "$PLIST_FILE"
+            echo '<dict>' >> "$PLIST_FILE"
+            echo '	<key>Filter</key>' >> "$PLIST_FILE"
+            echo '	<dict>' >> "$PLIST_FILE"
+            echo '		<key>Bundles</key>' >> "$PLIST_FILE"
+            echo '		<array>' >> "$PLIST_FILE"
+            echo "			<string>${FILTER_STRING}${DYLIB_NAME}</string>" >> "$PLIST_FILE"
+            echo '		</array>' >> "$PLIST_FILE"
+            echo '	</dict>' >> "$PLIST_FILE"
+            echo '</dict>' >> "$PLIST_FILE"
+            echo '</plist>' >> "$PLIST_FILE"
             
             cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
             cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
@@ -375,7 +374,6 @@ EOF
       if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: YTKACE
         files: |
           ${{ env.DEB_DIR }}/*.deb
         name: ${{ env.TWEAK_NAME }} v${{ env.PACKAGE_VERSION }}
