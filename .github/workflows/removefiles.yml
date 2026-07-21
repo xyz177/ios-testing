@@ -1,7 +1,35 @@
-- name: Remove Files
-  uses: mdmush/remove-files@v1.0.1
-  with:
-    file-paths: |
-      /path/to/file1
-      /path/to/file2
-      /path/to/file3
+name: Delete Files Manually
+on:
+  workflow_dispatch:
+    inputs:
+      files_to_delete:
+        description: 'List files/folders to delete. One per line'
+        required: true
+        type: string
+        default: |
+          bro.txt
+          test.log
+          temp/
+      confirm:
+        description: 'Type DELETE to confirm'
+        required: true
+        type: string
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove Files
+        uses: mdmush/remove-files@v1.0.1
+        with:
+          file-paths: ${{ inputs.files_to_delete }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -A && git commit -m "delete files" && git push || echo "nothing to commit"
