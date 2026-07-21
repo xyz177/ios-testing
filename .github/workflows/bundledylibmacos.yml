@@ -414,7 +414,7 @@ jobs:
         tag_name: ${{ env.TAG_NAME }}
         draft: false
         prerelease: false
-        generate_release_notes: true
+        generate_release_notes: false
         files: |
           ${{ env.DEB_DIR }}/*.deb
         body: ""
