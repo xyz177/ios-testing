@@ -44,6 +44,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Install dpkg
+      run: |
+        echo "📦 Installing dpkg..."
+        brew install dpkg
+        echo "✅ dpkg installed"
+        dpkg --version
+
     - name: Set environment variables
       run: |
         # Get inputs with fallbacks
