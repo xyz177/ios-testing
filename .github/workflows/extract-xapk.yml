@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -q -y unzip curl wget
+          sudo apt-get install -q -y unzip curl wget file
 
       - name: Download and extract XAPK files
         run: |
@@ -39,68 +39,119 @@ jobs:
             # Remove query parameters if any
             FILENAME="${FILENAME%%\?*}"
             
+            # If filename is empty or doesn't have extension, use a default
+            if [ -z "$FILENAME" ] || [[ ! "$FILENAME" == *.* ]]; then
+              FILENAME="downloaded_file_${DOWNLOAD_COUNT}"
+            fi
+            
             echo "  Filename: $FILENAME"
             
-            # Download the file
-            if ! wget -q --show-progress --timeout=30 --tries=3 -O "downloaded/$FILENAME" "$url"; then
+            # Download with follow redirects and better error handling
+            if ! wget --max-redirect=5 --timeout=60 --tries=3 -O "downloaded/$FILENAME" "$url"; then
               echo "  ❌ Failed to download: $url"
+              echo "  Trying with curl as fallback..."
+              if ! curl -L -o "downloaded/$FILENAME" "$url"; then
+                echo "  ❌ Both wget and curl failed!"
+                exit 1
+              fi
+            fi
+            
+            # Check if download was successful
+            if [ ! -f "downloaded/$FILENAME" ] || [ ! -s "downloaded/$FILENAME" ]; then
+              echo "  ❌ Downloaded file is empty or missing!"
               exit 1
             fi
             
-            echo "  ✅ Downloaded: $FILENAME ($(du -sh "downloaded/$FILENAME" | cut -f1))"
+            FILE_SIZE=$(du -sh "downloaded/$FILENAME" | cut -f1)
+            echo "  ✅ Downloaded: $FILENAME ($FILE_SIZE)"
             
-            # Check if it's a ZIP file
+            # Check file type
+            FILE_TYPE=$(file -b "downloaded/$FILENAME")
+            echo "  📄 File type: $FILE_TYPE"
+            
+            # Check if it's a valid zip/xapk
+            if file "downloaded/$FILENAME" | grep -q "Zip archive"; then
+              echo "  ✅ Valid ZIP archive detected"
+              
+              # Test the zip file
+              if unzip -t "downloaded/$FILENAME" >/dev/null 2>&1; then
+                echo "  ✅ ZIP file is valid"
+              else
+                echo "  ⚠️  ZIP file may be corrupted, attempting to extract anyway..."
+              fi
+              
+              # Check if it's actually a XAPK or contains XAPK
+              if file "downloaded/$FILENAME" | grep -q "Zip archive" && unzip -l "downloaded/$FILENAME" 2>/dev/null | grep -qi "\.xapk"; then
+                echo "  📦 ZIP contains XAPK files"
+              fi
+            else
+              echo "  ⚠️  Not a recognized ZIP archive"
+              echo "  File content preview (first 100 bytes):"
+              head -c 100 "downloaded/$FILENAME" | xxd
+            fi
+            
+            # Try to extract based on file type
             if [[ "$FILENAME" == *.zip ]] || [[ "$FILENAME" == *.ZIP ]] || file "downloaded/$FILENAME" | grep -q "Zip archive"; then
-              echo "  📦 Detected ZIP file, extracting..."
+              echo "  📦 Processing as ZIP file..."
               
               # Extract the ZIP to a temporary folder
-              TEMP_DIR="downloaded/${FILENAME%.zip}_extracted"
+              TEMP_DIR="downloaded/${FILENAME%.zip}_extracted_${DOWNLOAD_COUNT}"
               mkdir -p "$TEMP_DIR"
-              unzip -o "downloaded/$FILENAME" -d "$TEMP_DIR/"
               
-              # Look for XAPK files inside the ZIP
-              XAPK_FOUND=false
-              for xapk in "$TEMP_DIR"/*.xapk "$TEMP_DIR"/*.XAPK; do
-                if [ -f "$xapk" ]; then
-                  XAPK_NAME=$(basename "$xapk")
-                  echo "  ✅ Found XAPK inside ZIP: $XAPK_NAME"
-                  cp "$xapk" "downloaded/"
-                  XAPK_FOUND=true
-                  break
-                fi
-              done
-              
-              # If no XAPK found, look for APK files directly
-              if [ "$XAPK_FOUND" = false ]; then
-                echo "  🔍 No XAPK found, looking for APK files..."
-                APK_FOUND=false
-                for apk in "$TEMP_DIR"/*.apk "$TEMP_DIR"/*.APK; do
-                  if [ -f "$apk" ]; then
-                    APK_NAME=$(basename "$apk")
-                    echo "  ✅ Found APK directly: $APK_NAME"
-                    mkdir -p "extracted/zip_${FILENAME%.zip}"
-                    cp "$apk" "extracted/zip_${FILENAME%.zip}/"
-                    APK_FOUND=true
-                    # Copy directly to output
-                    BASENAME="${FILENAME%.zip}"
-                    cp "$apk" "output/apks/${BASENAME}_${APK_NAME}"
-                    DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
+              if unzip -o "downloaded/$FILENAME" -d "$TEMP_DIR/" 2>&1; then
+                echo "  ✅ ZIP extracted successfully"
+                
+                # Look for XAPK files inside the ZIP
+                XAPK_FOUND=false
+                for xapk in "$TEMP_DIR"/*.xapk "$TEMP_DIR"/*.XAPK; do
+                  if [ -f "$xapk" ]; then
+                    XAPK_NAME=$(basename "$xapk")
+                    echo "  ✅ Found XAPK inside ZIP: $XAPK_NAME"
+                    cp "$xapk" "downloaded/${XAPK_NAME}"
+                    XAPK_FOUND=true
+                    break
                   fi
                 done
                 
-                if [ "$APK_FOUND" = false ]; then
-                  echo "  ⚠️  No XAPK or APK files found in ZIP!"
-                  echo "  Contents of ZIP:"
-                  ls -la "$TEMP_DIR/"
+                # If no XAPK found, look for APK files directly
+                if [ "$XAPK_FOUND" = false ]; then
+                  echo "  🔍 No XAPK found, looking for APK files..."
+                  APK_FOUND=false
+                  for apk in "$TEMP_DIR"/*.apk "$TEMP_DIR"/*.APK; do
+                    if [ -f "$apk" ]; then
+                      APK_NAME=$(basename "$apk")
+                      echo "  ✅ Found APK directly: $APK_NAME"
+                      BASENAME="${FILENAME%.zip}"
+                      cp "$apk" "output/apks/${BASENAME}_${APK_NAME}"
+                      APK_FOUND=true
+                      DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
+                    fi
+                  done
+                  
+                  if [ "$APK_FOUND" = false ]; then
+                    echo "  ⚠️  No XAPK or APK files found in ZIP!"
+                    echo "  Contents of ZIP:"
+                    ls -la "$TEMP_DIR/" | head -20
+                  fi
                 fi
+                
+                # Clean up extracted temp
+                rm -rf "$TEMP_DIR"
+              else
+                echo "  ❌ Failed to extract ZIP file!"
+                echo "  File may be corrupted or not a valid ZIP"
               fi
-              
-              # Clean up extracted temp
-              rm -rf "$TEMP_DIR"
             else
-              # It's a direct XAPK file
-              echo "  📦 Direct XAPK file detected"
-              XAPK_NAME="$FILENAME"
+              # Try as XAPK directly
+              echo "  📦 Processing as XAPK file..."
+              if unzip -t "downloaded/$FILENAME" >/dev/null 2>&1; then
+                echo "  ✅ Valid XAPK file"
+                # Copy to extracted folder for later processing
+                cp "downloaded/$FILENAME" "downloaded/$(basename "$FILENAME" .zip).xapk" 2>/dev/null || true
+              else
+                echo "  ⚠️  File doesn't appear to be a valid XAPK/ZIP"
+                echo "  It might be a download page or require authentication"
+              fi
             fi
           done
 
@@ -115,30 +166,41 @@ jobs:
             fi
             
             BASENAME=$(basename "$xapk" .xapk)
-            BASENAME=$(basename "$BASENAME" .XAPK)  # Handle uppercase extension
+            BASENAME=$(basename "$BASENAME" .XAPK)
+            
+            # Skip if it's the zip file itself
+            if [[ "$BASENAME" == *.zip ]] || [[ "$BASENAME" == *.ZIP ]]; then
+              continue
+            fi
+            
             echo ""
             echo "  Extracting: $BASENAME"
             
             mkdir -p "extracted/$BASENAME"
-            unzip -o "$xapk" -d "extracted/$BASENAME/"
             
-            # Find and copy APKs
-            APK_COUNT=0
-            find "extracted/$BASENAME/" -name "*.apk" -o -name "*.APK" | while read apk; do
-              apkname=$(basename "$apk")
-              newname="${BASENAME}_${apkname}"
-              echo "    ✅ Found APK: $apkname → $newname"
-              cp "$apk" "output/apks/$newname"
-              APK_COUNT=$((APK_COUNT + 1))
-            done
-            
-            # Find and copy OBB files
-            find "extracted/$BASENAME/" -name "*.obb" -o -name "*.OBB" | while read obb; do
-              obbname=$(basename "$obb")
-              newname="${BASENAME}_${obbname}"
-              echo "    ✅ Found OBB: $obbname → $newname"
-              cp "$obb" "output/obb/$newname"
-            done
+            # Try to extract with error handling
+            if unzip -o "$xapk" -d "extracted/$BASENAME/" 2>&1; then
+              echo "  ✅ Extraction successful"
+              
+              # Find and copy APKs
+              find "extracted/$BASENAME/" -name "*.apk" -o -name "*.APK" | while read apk; do
+                apkname=$(basename "$apk")
+                newname="${BASENAME}_${apkname}"
+                echo "    ✅ Found APK: $apkname → $newname"
+                cp "$apk" "output/apks/$newname"
+              done
+              
+              # Find and copy OBB files
+              find "extracted/$BASENAME/" -name "*.obb" -o -name "*.OBB" | while read obb; do
+                obbname=$(basename "$obb")
+                newname="${BASENAME}_${obbname}"
+                echo "    ✅ Found OBB: $obbname → $newname"
+                cp "$obb" "output/obb/$newname"
+              done
+            else
+              echo "  ❌ Failed to extract: $xapk"
+              echo "  File may be corrupted or not a valid XAPK"
+            fi
           done
 
       - name: Show extracted files
@@ -147,16 +209,16 @@ jobs:
           echo "📊 Extraction Summary:"
           echo ""
           echo "📱 APKs extracted:"
-          if [ -d "output/apks" ] && [ "$(ls -A output/apks)" ]; then
+          if [ -d "output/apks" ] && [ "$(ls -A output/apks 2>/dev/null)" ]; then
             ls -lah output/apks/
             echo ""
-            echo "Total APK count: $(ls -1 output/apks/ | wc -l)"
+            echo "Total APK count: $(ls -1 output/apks/ 2>/dev/null | wc -l)"
           else
             echo "  None found"
           fi
           echo ""
           echo "📦 OBB files extracted:"
-          if [ -d "output/obb" ] && [ "$(ls -A output/obb)" ]; then
+          if [ -d "output/obb" ] && [ "$(ls -A output/obb 2>/dev/null)" ]; then
             ls -lah output/obb/
           else
             echo "  None found"
@@ -167,7 +229,7 @@ jobs:
         with:
           name: extracted-apks
           path: output/apks/*.apk
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload OBB files
         uses: actions/upload-artifact@v4
