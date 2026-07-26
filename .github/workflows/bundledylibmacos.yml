@@ -28,9 +28,9 @@ on:
         required: true
         default: 'YTKPlus'
       dylib_files:
-        description: 'Space-separated list of dylib files (e.g., YTKPlus.dylib libYTKPlus.dylib)'
+        description: 'Space-separated list of dylib files or zip files containing dylibs (e.g., YTKPlus.dylib libYTKPlus.zip)'
         required: true
-        default: 'YTKPlus.dylib libYTKPlus.dylib'
+        default: 'YTKPlus.dylib'
       bundle_zips:
         description: 'Space-separated list of bundle zip files (e.g., YTKPlus.bundle.zip)'
         required: true
@@ -93,13 +93,14 @@ jobs:
         echo "BUILD_DIR=$(pwd)/build" >> $GITHUB_ENV
         echo "DEB_DIR=$(pwd)/debs" >> $GITHUB_ENV
         echo "EXTRACT_DIR=$(pwd)/extracted" >> $GITHUB_ENV
+        echo "DYLIB_EXTRACT_DIR=$(pwd)/dylib_extracted" >> $GITHUB_ENV
         
         echo "📊 Configuration:"
         echo "  Package Name: ${PACKAGE_NAME}"
         echo "  Package Version: ${PACKAGE_VERSION}"
         echo "  Tweak Name: ${TWEAK_NAME}"
         echo "  Tag Name: ${TAG_NAME}"
-        echo "  Dylib Files: ${DYLIB_FILES}"
+        echo "  Dylib Files/Zips: ${DYLIB_FILES}"
         echo "  Bundle Zips: ${BUNDLE_ZIPS}"
         echo "  Bundle ID: ${BUNDLE_ID}"
 
@@ -108,6 +109,7 @@ jobs:
         mkdir -p $BUILD_DIR
         mkdir -p $DEB_DIR
         mkdir -p $EXTRACT_DIR
+        mkdir -p $DYLIB_EXTRACT_DIR
         mkdir -p $BUILD_DIR/rootful/DEBIAN
         mkdir -p $BUILD_DIR/rootless/DEBIAN
 
@@ -126,13 +128,84 @@ jobs:
         echo ""
         echo "📦 Checking if files exist:"
         IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
-        for dylib in "${DYLIB_ARRAY[@]}"; do
-          if [ -f "$dylib" ]; then echo "  ✅ $dylib exists"; else echo "  ❌ $dylib NOT found"; fi
+        for item in "${DYLIB_ARRAY[@]}"; do
+          if [ -f "$item" ]; then echo "  ✅ $item exists"; else echo "  ❌ $item NOT found"; fi
         done
         IFS=' ' read -ra ZIP_ARRAY <<< "$BUNDLE_ZIPS"
         for zip in "${ZIP_ARRAY[@]}"; do
           if [ -f "$zip" ]; then echo "  ✅ $zip exists"; else echo "  ❌ $zip NOT found"; fi
         done
+
+    - name: Extract zipped dylib files
+      run: |
+        echo "📦 Extracting zipped dylib files..."
+        
+        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
+        
+        for item in "${DYLIB_ARRAY[@]}"; do
+          if [[ "$item" == *.zip ]] || [[ "$item" == *.ZIP ]]; then
+            if [ -f "$item" ]; then
+              echo "  Extracting dylib from: $item"
+              unzip -q "$item" -d "$DYLIB_EXTRACT_DIR/"
+              echo "  ✅ Extracted: $item"
+            else
+              echo "  ⚠️  WARNING: $item not found!"
+            fi
+          fi
+        done
+        
+        echo ""
+        echo "📂 Extracted dylib files:"
+        find "$DYLIB_EXTRACT_DIR" -name "*.dylib" 2>/dev/null | sed 's|.*/||' || echo "  (none)"
+
+    - name: Copy dylib files
+      run: |
+        # Create necessary directories
+        mkdir -p $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries
+        mkdir -p $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries
+        
+        echo "📦 Copying dylib files..."
+        DYLIB_COUNT=0
+        
+        # First, process direct dylib files
+        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
+        
+        for dylib in "${DYLIB_ARRAY[@]}"; do
+          # Skip if it's a zip file
+          if [[ "$dylib" == *.zip ]] || [[ "$dylib" == *.ZIP ]]; then
+            continue
+          fi
+          
+          if [ -f "$dylib" ]; then
+            cp "$dylib" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+            cp "$dylib" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+            echo "  ✅ Copied: $dylib"
+            DYLIB_COUNT=$((DYLIB_COUNT + 1))
+          else
+            echo "  ⚠️  WARNING: $dylib not found! Skipping..."
+          fi
+        done
+        
+        # Then, copy extracted dylibs from zips
+        for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
+          if [ -f "$dylib" ]; then
+            DYLIB_NAME=$(basename "$dylib")
+            # Check if already copied
+            if [ ! -f "$BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/$DYLIB_NAME" ]; then
+              cp "$dylib" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+              cp "$dylib" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied from zip: $DYLIB_NAME"
+              DYLIB_COUNT=$((DYLIB_COUNT + 1))
+            fi
+          fi
+        done
+        
+        if [ $DYLIB_COUNT -eq 0 ]; then
+          echo "  ❌ ERROR: No dylib files found to copy!"
+          exit 1
+        fi
+        
+        echo "DYLIB_COUNT=${DYLIB_COUNT}" >> $GITHUB_ENV
 
     - name: Extract bundle zip files
       run: |
@@ -162,35 +235,6 @@ jobs:
         echo "📂 Extracted bundle directories:"
         find $EXTRACT_DIR -type d -name "*.bundle" 2>/dev/null | sed 's|.*/||' || echo "  (none)"
 
-    - name: Copy dylib files
-      run: |
-        # Create necessary directories
-        mkdir -p $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries
-        mkdir -p $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries
-        
-        echo "📦 Copying dylib files..."
-        DYLIB_COUNT=0
-        
-        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
-        
-        for dylib in "${DYLIB_ARRAY[@]}"; do
-          if [ -f "$dylib" ]; then
-            cp "$dylib" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
-            cp "$dylib" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
-            echo "  ✅ Copied: $dylib"
-            DYLIB_COUNT=$((DYLIB_COUNT + 1))
-          else
-            echo "  ⚠️  WARNING: $dylib not found! Skipping..."
-          fi
-        done
-        
-        if [ $DYLIB_COUNT -eq 0 ]; then
-          echo "  ❌ ERROR: No dylib files found to copy!"
-          exit 1
-        fi
-        
-        echo "DYLIB_COUNT=${DYLIB_COUNT}" >> $GITHUB_ENV
-
     - name: Copy bundle files
       run: |
         # Create necessary directories
@@ -210,10 +254,9 @@ jobs:
         done
         
         if [ $BUNDLE_COUNT -eq 0 ]; then
-          echo "  ❌ ERROR: No .bundle found in extracted files!"
+          echo "  ⚠️  WARNING: No .bundle found in extracted files!"
           echo "  Extracted directory contents:"
           find $EXTRACT_DIR -type f 2>/dev/null | head -20
-          exit 1
         fi
         
         echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
@@ -227,35 +270,39 @@ jobs:
         echo "📦 Generating plist files with bundle ID: $BUNDLE_ID"
         PLIST_COUNT=0
         
-        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
-        
-        for dylib in "${DYLIB_ARRAY[@]}"; do
-          # Only generate plist if the dylib exists
+        # Get all dylib names from the build directory
+        for dylib in "$BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries"/*.dylib; do
           if [ -f "$dylib" ]; then
-            DYLIB_NAME="${dylib%.dylib}"
+            DYLIB_NAME=$(basename "$dylib" .dylib)
             PLIST_FILE="${DYLIB_NAME}.plist"
             
-            echo "  Generating: $PLIST_FILE"
-            
-            # Create plist file
-            echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
-            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
-            echo '<plist version="1.0">' >> "$PLIST_FILE"
-            echo '<dict>' >> "$PLIST_FILE"
-            echo '	<key>Filter</key>' >> "$PLIST_FILE"
-            echo '	<dict>' >> "$PLIST_FILE"
-            echo '		<key>Bundles</key>' >> "$PLIST_FILE"
-            echo '		<array>' >> "$PLIST_FILE"
-            echo "			<string>${BUNDLE_ID}</string>" >> "$PLIST_FILE"
-            echo '		</array>' >> "$PLIST_FILE"
-            echo '	</dict>' >> "$PLIST_FILE"
-            echo '</dict>' >> "$PLIST_FILE"
-            echo '</plist>' >> "$PLIST_FILE"
+            # Check if plist already exists
+            if [ -f "$PLIST_FILE" ]; then
+              echo "  Using existing: $PLIST_FILE"
+              cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
+              cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
+            else
+              echo "  Generating: $PLIST_FILE"
+              
+              # Create plist file
+              echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
+              echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
+              echo '<plist version="1.0">' >> "$PLIST_FILE"
+              echo '<dict>' >> "$PLIST_FILE"
+              echo '	<key>Filter</key>' >> "$PLIST_FILE"
+              echo '	<dict>' >> "$PLIST_FILE"
+              echo '		<key>Bundles</key>' >> "$PLIST_FILE"
+              echo '		<array>' >> "$PLIST_FILE"
+              echo "			<string>${BUNDLE_ID}</string>" >> "$PLIST_FILE"
+              echo '		</array>' >> "$PLIST_FILE"
+              echo '	</dict>' >> "$PLIST_FILE"
+              echo '</dict>' >> "$PLIST_FILE"
+              echo '</plist>' >> "$PLIST_FILE"
+            fi
             
             cp "$PLIST_FILE" $BUILD_DIR/rootful/Library/MobileSubstrate/DynamicLibraries/
             cp "$PLIST_FILE" $BUILD_DIR/rootless/Library/MobileSubstrate/DynamicLibraries/
             echo "  ✅ Generated: $PLIST_FILE"
-            
             PLIST_COUNT=$((PLIST_COUNT + 1))
           fi
         done
