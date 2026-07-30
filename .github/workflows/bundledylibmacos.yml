@@ -177,15 +177,15 @@ jobs:
         echo "📦 Copying bundle files..."
         BUNDLE_COUNT=0
         
-        # Find bundles using ls instead of find to avoid syntax issues
-        for bundle in $EXTRACT_DIR/*.bundle; do
+        # Use find with -print0 and while loop for safety
+        while IFS= read -r -d '' bundle; do
           if [ -d "$bundle" ]; then
             BUNDLE_NAME=$(basename "$bundle")
             cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
             echo "  ✅ Copied bundle: $BUNDLE_NAME"
             BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
           fi
-        done
+        done < <(find "$EXTRACT_DIR" -type d -name "*.bundle" -print0 2>/dev/null || true)
         
         echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
 
