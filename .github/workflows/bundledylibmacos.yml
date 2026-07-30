@@ -1,4 +1,4 @@
-name: Build Jailbreak DEB (Roothide arm64e)
+name: Build Jailbreak DEB (Roothide)
 
 on:
   workflow_dispatch:
@@ -23,10 +23,6 @@ on:
         description: 'Main tweak name'
         required: true
         default: 'YTKPlus'
-      dylib_files:
-        description: 'Space-separated list of dylib files or zip files'
-        required: true
-        default: 'YTKPlus.dylib'
       bundle_zips:
         description: 'Space-separated list of bundle zip files'
         required: true
@@ -54,7 +50,6 @@ jobs:
         MAINTAINER="${{ github.event.inputs.maintainer }}"
         DESCRIPTION="${{ github.event.inputs.description }}"
         TWEAK_NAME="${{ github.event.inputs.tweak_name }}"
-        DYLIB_FILES="${{ github.event.inputs.dylib_files }}"
         BUNDLE_ZIPS="${{ github.event.inputs.bundle_zips }}"
         BUNDLE_ID="${{ github.event.inputs.bundle_id }}"
         
@@ -63,7 +58,6 @@ jobs:
         if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
         if [ -z "$DESCRIPTION" ]; then DESCRIPTION="YTKPlus tweak for YouTube"; fi
         if [ -z "$TWEAK_NAME" ]; then TWEAK_NAME="YTKPlus"; fi
-        if [ -z "$DYLIB_FILES" ]; then DYLIB_FILES="YTKPlus.dylib"; fi
         if [ -z "$BUNDLE_ZIPS" ]; then BUNDLE_ZIPS="YTKPlus.bundle.zip"; fi
         if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
         
@@ -75,7 +69,6 @@ jobs:
         echo "DESCRIPTION=${DESCRIPTION}" >> $GITHUB_ENV
         echo "TWEAK_NAME=${TWEAK_NAME}" >> $GITHUB_ENV
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
-        echo "DYLIB_FILES=${DYLIB_FILES}" >> $GITHUB_ENV
         echo "BUNDLE_ZIPS=${BUNDLE_ZIPS}" >> $GITHUB_ENV
         echo "BUNDLE_ID=${BUNDLE_ID}" >> $GITHUB_ENV
         echo "BUILD_DIR=$(pwd)/build" >> $GITHUB_ENV
@@ -90,74 +83,96 @@ jobs:
         mkdir -p $EXTRACT_DIR
         mkdir -p $DYLIB_EXTRACT_DIR
         mkdir -p $BUILD_DIR/roothide/DEBIAN
+        mkdir -p $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
+        mkdir -p $BUILD_DIR/roothide/var/jb/Library/PreferenceBundles
 
-    - name: Check files
-      run: ls -la
-
-    - name: Extract zipped dylib files
+    - name: Auto-detect ALL dylib files (including .dylib.zip)
       run: |
-        for item in $DYLIB_FILES; do
-          if [[ "$item" == *.zip ]] || [[ "$item" == *.ZIP ]]; then
-            if [ -f "$item" ]; then
-              echo "Extracting dylib from: $item"
-              unzip -q "$item" -d $DYLIB_EXTRACT_DIR/
+        echo "📦 Scanning for dylib files..."
+        DYLIB_COUNT=0
+        
+        # First, extract any .dylib.zip files
+        for zip in *.dylib.zip; do
+          if [ -f "$zip" ]; then
+            echo "  Found zipped dylib: $zip"
+            echo "  Extracting: $zip"
+            unzip -q "$zip" -d "$DYLIB_EXTRACT_DIR/"
+            echo "  ✅ Extracted: $zip"
+          fi
+        done
+        
+        # Copy extracted dylibs from zip
+        for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
+          if [ -f "$dylib" ]; then
+            DYLIB_NAME=$(basename "$dylib")
+            echo "  Found in zip: $DYLIB_NAME"
+            cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+            DYLIB_COUNT=$((DYLIB_COUNT + 1))
+          fi
+        done
+        
+        # Also check for direct .dylib files (not zipped)
+        for dylib in *.dylib; do
+          if [ -f "$dylib" ]; then
+            # Skip if it's a .dylib.zip (the loop above handles zips)
+            if [[ "$dylib" != *.dylib.zip ]]; then
+              echo "  Found direct dylib: $dylib"
+              cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              DYLIB_COUNT=$((DYLIB_COUNT + 1))
             fi
           fi
         done
-
-    - name: Copy dylib files
-      run: |
-        mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
-        DYLIB_COUNT=0
         
-        for dylib in $DYLIB_FILES; do
-          if [[ "$dylib" != *.zip ]] && [[ "$dylib" != *.ZIP ]] && [ -f "$dylib" ]; then
-            cp "$dylib" $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
-            DYLIB_COUNT=$((DYLIB_COUNT + 1))
-          fi
-        done
-        
-        for dylib in $DYLIB_EXTRACT_DIR/*.dylib; do
-          if [ -f "$dylib" ]; then
-            DYLIB_NAME=$(basename "$dylib")
-            cp "$dylib" $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
-            DYLIB_COUNT=$((DYLIB_COUNT + 1))
-          fi
-        done
+        if [ $DYLIB_COUNT -eq 0 ]; then
+          echo "  ❌ ERROR: No dylib files found!"
+          echo "  Available files in repository:"
+          ls -la
+          exit 1
+        fi
         
         echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
+        echo ""
+        echo "📊 Total dylib files found: $DYLIB_COUNT"
+        echo "📂 Dylib files in build:"
+        ls -la $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
 
     - name: Extract and copy bundle files
       run: |
-        mkdir -p $BUILD_DIR/roothide/Library/PreferenceBundles
+        echo "📦 Extracting bundle zip files..."
         BUNDLE_COUNT=0
         
         for zip in $BUNDLE_ZIPS; do
           if [ -f "$zip" ]; then
-            echo "Extracting: $zip"
+            echo "  Extracting: $zip"
             unzip -q "$zip" -d $EXTRACT_DIR/
+            echo "  ✅ Extracted: $zip"
           fi
         done
         
+        echo ""
+        echo "📦 Copying bundle files..."
         for bundle in $EXTRACT_DIR/*.bundle; do
           if [ -d "$bundle" ]; then
             BUNDLE_NAME=$(basename "$bundle")
-            cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
+            cp -r "$bundle" $BUILD_DIR/roothide/var/jb/Library/PreferenceBundles/
+            echo "  ✅ Copied bundle: $BUNDLE_NAME"
             BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
           fi
         done
         
         echo "BUNDLE_COUNT=$BUNDLE_COUNT" >> $GITHUB_ENV
 
-    - name: Generate plist files
+    - name: Generate plist files for each dylib
       run: |
-        mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
+        echo "📦 Generating plist files with bundle ID: $BUNDLE_ID"
         PLIST_COUNT=0
         
-        for dylib in $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/*.dylib; do
+        for dylib in $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib" .dylib)
             PLIST_FILE="${DYLIB_NAME}.plist"
+            
+            echo "  Generating: $PLIST_FILE"
             
             echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
             echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
@@ -173,7 +188,8 @@ jobs:
             echo '</dict>' >> "$PLIST_FILE"
             echo '</plist>' >> "$PLIST_FILE"
             
-            cp "$PLIST_FILE" $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
+            cp "$PLIST_FILE" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+            echo "  ✅ Generated: $PLIST_FILE"
             PLIST_COUNT=$((PLIST_COUNT + 1))
           fi
         done
@@ -182,15 +198,13 @@ jobs:
 
     - name: Show package contents
       run: |
-        echo "Dylib files: $DYLIB_COUNT"
-        echo "Bundle files: $BUNDLE_COUNT"
-        echo "Plist files: $PLIST_COUNT"
+        echo "📊 Package summary:"
+        echo "  - Dylib files: $DYLIB_COUNT"
+        echo "  - Bundle files: $BUNDLE_COUNT"
+        echo "  - Plist files: $PLIST_COUNT"
         echo ""
-        echo "DynamicLibraries contents:"
-        ls -la $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
-        echo ""
-        echo "PreferenceBundles contents:"
-        ls -la $BUILD_DIR/roothide/Library/PreferenceBundles/
+        echo "📂 Full package contents:"
+        find $BUILD_DIR/roothide -type f | sed "s|$BUILD_DIR/roothide||" | sort
 
     - name: Create DEBIAN control file
       run: |
@@ -201,7 +215,7 @@ jobs:
         Priority: optional
         Architecture: iphoneos-arm64e
         Maintainer: $MAINTAINER
-        Depends: mobilesubstrate (>= 0.9.5000)
+        Depends: ellekit (>= 1.0.0)
         Description: $DESCRIPTION
         Name: $TWEAK_NAME
         Author: $MAINTAINER
@@ -212,8 +226,8 @@ jobs:
       run: |
         cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
         #!/bin/sh
-        chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib
-        chmod 755 /Library/PreferenceBundles/*.bundle
+        chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib
+        chmod 755 /var/jb/Library/PreferenceBundles/*.bundle
         killall -9 SpringBoard
         exit 0
         EOF
@@ -225,8 +239,14 @@ jobs:
 
     - name: List built packages
       run: |
-        echo "Built packages:"
+        echo "📦 Built packages:"
         ls -la $DEB_DIR/
+        echo ""
+        echo "📊 Package statistics:"
+        echo "  - Dylibs included: $DYLIB_COUNT"
+        echo "  - Bundles included: $BUNDLE_COUNT"
+        echo "  - Plists generated: $PLIST_COUNT"
+        echo "  - Total package size: $(du -sh $DEB_DIR/ | cut -f1)"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
