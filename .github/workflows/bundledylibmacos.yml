@@ -151,13 +151,11 @@ jobs:
 
     - name: Copy dylib files (Roothide)
       run: |
-        # Roothide uses standard paths - the arm64e patcher will handle conversion
         mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
         
         echo "📦 Copying dylib files..."
         DYLIB_COUNT=0
         
-        # Process direct dylib files
         IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
         
         for dylib in "${DYLIB_ARRAY[@]}"; do
@@ -174,7 +172,6 @@ jobs:
           fi
         done
         
-        # Copy extracted dylibs from zips
         for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib")
@@ -247,13 +244,13 @@ jobs:
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Filter</key>
-	<dict>
-		<key>Bundles</key>
-		<array>
-			<string>${BUNDLE_ID}</string>
-		</array>
-	</dict>
+    <key>Filter</key>
+    <dict>
+        <key>Bundles</key>
+        <array>
+            <string>${BUNDLE_ID}</string>
+        </array>
+    </dict>
 </dict>
 </plist>
 EOF
@@ -305,7 +302,7 @@ EOF
         for dylib in /Library/MobileSubstrate/DynamicLibraries/*.dylib; do
             if [ -f "$dylib" ]; then
                 chmod 755 "$dylib"
-                echo "  ✅ $(basename $dylib)"
+                echo "  ✅ $(basename "$dylib")"
             fi
         done
         
@@ -314,7 +311,7 @@ EOF
             if [ -d "$bundle" ]; then
                 chmod 755 "$bundle"
                 find "$bundle" -type f -exec chmod 644 {} \; 2>/dev/null
-                echo "  ✅ $(basename $bundle)"
+                echo "  ✅ $(basename "$bundle")"
             fi
         done
         
@@ -323,15 +320,6 @@ EOF
         exit 0
         EOF
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
-
-    - name: Create prerm script (pre-remove)
-      run: |
-        cat > $BUILD_DIR/roothide/DEBIAN/prerm << 'EOF'
-        #!/bin/sh
-        killall -9 SpringBoard 2>/dev/null || true
-        exit 0
-        EOF
-        chmod 755 $BUILD_DIR/roothide/DEBIAN/prerm
 
     - name: Build DEB package
       run: |
