@@ -10,7 +10,7 @@ on:
       package_version:
         description: 'Package version'
         required: true
-        default: '1.0.0'
+        default: '5.23'
       maintainer:
         description: 'Maintainer name and email'
         required: true
@@ -24,15 +24,15 @@ on:
         required: true
         default: 'YTKPlus'
       dylib_files:
-        description: 'Space-separated list of direct dylib files (e.g., YTKPlus.dylib libYTKPlus.dylib)'
+        description: 'Space-separated list of direct dylib files'
         required: true
         default: 'YTKPlus.dylib'
       dylib_zips:
-        description: 'Space-separated list of dylib zip files (e.g., YTKPlus.dylib.zip libYTKPlus.dylib.zip)'
+        description: 'Space-separated list of dylib zip files'
         required: false
         default: ''
       bundle_zips:
-        description: 'Space-separated list of bundle zip files (e.g., YTKPlus.bundle.zip)'
+        description: 'Space-separated list of bundle zip files'
         required: true
         default: 'YTKPlus.bundle.zip'
       bundle_id:
@@ -64,7 +64,7 @@ jobs:
         BUNDLE_ID="${{ github.event.inputs.bundle_id }}"
         
         if [ -z "$PACKAGE_NAME" ]; then PACKAGE_NAME="com.ikarwan.ytkplus"; fi
-        if [ -z "$PACKAGE_VERSION" ]; then PACKAGE_VERSION="1.0.0"; fi
+        if [ -z "$PACKAGE_VERSION" ]; then PACKAGE_VERSION="5.23"; fi
         if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
         if [ -z "$DESCRIPTION" ]; then DESCRIPTION="YTKPlus tweak for YouTube"; fi
         if [ -z "$TWEAK_NAME" ]; then TWEAK_NAME="YTKPlus"; fi
@@ -115,15 +115,12 @@ jobs:
         done
         
         echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
-        echo ""
-        echo "📊 Direct dylib files copied: $DYLIB_COUNT"
 
     - name: Extract and copy zipped dylib files (if any)
       run: |
         echo "📦 Extracting zipped dylib files..."
         ZIP_DYLIB_COUNT=0
         
-        # Only run if DYLIB_ZIPS is not empty
         if [ -n "$DYLIB_ZIPS" ]; then
           for zip in $DYLIB_ZIPS; do
             if [ -f "$zip" ]; then
@@ -135,7 +132,6 @@ jobs:
             fi
           done
           
-          # Copy extracted dylibs from zip
           for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
             if [ -f "$dylib" ]; then
               DYLIB_NAME=$(basename "$dylib")
@@ -156,16 +152,12 @@ jobs:
         
         if [ $TOTAL_DYLIB_COUNT -eq 0 ]; then
           echo "  ❌ ERROR: No dylib files found!"
-          echo "  Available files in repository:"
           ls -la
           exit 1
         fi
         
         echo "TOTAL_DYLIB_COUNT=$TOTAL_DYLIB_COUNT" >> $GITHUB_ENV
-        echo ""
-        echo "📊 Total dylib files: $TOTAL_DYLIB_COUNT (Direct: $DYLIB_COUNT, From Zips: $ZIP_DYLIB_COUNT)"
-        echo "📂 Dylib files in build:"
-        ls -la $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+        echo "📊 Total dylib files: $TOTAL_DYLIB_COUNT"
 
     - name: Extract and copy bundle files
       run: |
@@ -180,7 +172,6 @@ jobs:
           fi
         done
         
-        echo ""
         echo "📦 Copying bundle files..."
         for bundle in $EXTRACT_DIR/*.bundle; do
           if [ -d "$bundle" ]; then
@@ -193,7 +184,7 @@ jobs:
         
         echo "BUNDLE_COUNT=$BUNDLE_COUNT" >> $GITHUB_ENV
 
-    - name: Generate plist files for each dylib
+    - name: Generate plist files
       run: |
         echo "📦 Generating plist files with bundle ID: $BUNDLE_ID"
         PLIST_COUNT=0
@@ -259,11 +250,21 @@ jobs:
       run: |
         cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
         #!/bin/sh
-        chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib
-        chmod 755 /var/jb/Library/PreferenceBundles/*.bundle
+        chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true
+        chmod 755 /var/jb/Library/PreferenceBundles/*.bundle 2>/dev/null || true
+        echo "Respring your device for changes to take effect."
         exit 0
         EOF
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
+
+    - name: Create prerm script (pre-removal)
+      run: |
+        cat > $BUILD_DIR/roothide/DEBIAN/prerm << 'EOF'
+        #!/bin/sh
+        echo "Removing YTKPlus..."
+        exit 0
+        EOF
+        chmod 755 $BUILD_DIR/roothide/DEBIAN/prerm
 
     - name: Build DEB package
       run: |
@@ -273,12 +274,6 @@ jobs:
       run: |
         echo "📦 Built packages:"
         ls -la $DEB_DIR/
-        echo ""
-        echo "📊 Package statistics:"
-        echo "  - Total dylibs included: $TOTAL_DYLIB_COUNT"
-        echo "  - Bundles included: $BUNDLE_COUNT"
-        echo "  - Plists generated: $PLIST_COUNT"
-        echo "  - Total package size: $(du -sh $DEB_DIR/ | cut -f1)"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
