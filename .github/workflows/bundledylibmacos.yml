@@ -177,14 +177,15 @@ jobs:
         echo "📦 Copying bundle files..."
         BUNDLE_COUNT=0
         
-        if [ -d "$EXTRACT_DIR" ]; then
-          for bundle in $(find "$EXTRACT_DIR" -type d -name "*.bundle"); do
+        # Find bundles using ls instead of find to avoid syntax issues
+        for bundle in $EXTRACT_DIR/*.bundle; do
+          if [ -d "$bundle" ]; then
             BUNDLE_NAME=$(basename "$bundle")
             cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
             echo "  ✅ Copied bundle: $BUNDLE_NAME"
             BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
-          done
-        fi
+          fi
+        done
         
         echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
 
@@ -234,7 +235,9 @@ EOF
         echo "  - Bundle ID: $BUNDLE_ID"
         echo ""
         echo "📂 Package contents:"
-        find $BUILD_DIR/roothide -type f | sed "s|$BUILD_DIR/roothide||" | sort
+        ls -la $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/ 2>/dev/null || echo "  No dylibs"
+        echo ""
+        ls -la $BUILD_DIR/roothide/Library/PreferenceBundles/ 2>/dev/null || echo "  No bundles"
 
     - name: Create DEBIAN control file
       run: |
@@ -254,13 +257,11 @@ EOF
 
     - name: Create postinst script
       run: |
-        cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
-        #!/bin/sh
-        chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib
-        chmod 755 /Library/PreferenceBundles/*.bundle
-        killall -9 SpringBoard
-        exit 0
-        EOF
+        echo "#!/bin/sh" > $BUILD_DIR/roothide/DEBIAN/postinst
+        echo "chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib" >> $BUILD_DIR/roothide/DEBIAN/postinst
+        echo "chmod 755 /Library/PreferenceBundles/*.bundle" >> $BUILD_DIR/roothide/DEBIAN/postinst
+        echo "killall -9 SpringBoard" >> $BUILD_DIR/roothide/DEBIAN/postinst
+        echo "exit 0" >> $BUILD_DIR/roothide/DEBIAN/postinst
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
 
     - name: Build DEB package
