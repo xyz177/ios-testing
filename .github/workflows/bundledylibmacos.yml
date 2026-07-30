@@ -14,11 +14,11 @@ on:
       maintainer:
         description: 'Maintainer name and email'
         required: true
-        default: 'Your Name <email@example.com>'
+        default: 'Your Name'
       description:
         description: 'Package description'
         required: true
-        default: 'YTKPlus tweak for YouTube'
+        default: 'tweak for YouTube'
       tweak_name:
         description: 'Main tweak name'
         required: true
