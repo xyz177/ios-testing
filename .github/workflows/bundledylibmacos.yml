@@ -1,14 +1,6 @@
 name: Build Jailbreak DEB (Roothide arm64e)
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths-ignore:
-      - '*.dylib'
-      - '*.zip'
-      - '*.bundle'
   workflow_dispatch:
     inputs:
       package_name:
@@ -100,22 +92,15 @@ jobs:
         mkdir -p $BUILD_DIR/roothide/DEBIAN
 
     - name: Check files
-      run: |
-        echo "📂 Files in repository:"
-        ls -la
+      run: ls -la
 
     - name: Extract zipped dylib files
       run: |
-        echo "📦 Extracting zipped dylib files..."
-        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
-        for item in "${DYLIB_ARRAY[@]}"; do
+        for item in $DYLIB_FILES; do
           if [[ "$item" == *.zip ]] || [[ "$item" == *.ZIP ]]; then
             if [ -f "$item" ]; then
-              echo "  Extracting dylib from: $item"
-              unzip -q "$item" -d "$DYLIB_EXTRACT_DIR/"
-              echo "  ✅ Extracted: $item"
-            else
-              echo "  ⚠️  WARNING: $item not found!"
+              echo "Extracting dylib from: $item"
+              unzip -q "$item" -d $DYLIB_EXTRACT_DIR/
             fi
           fi
         done
@@ -123,143 +108,115 @@ jobs:
     - name: Copy dylib files
       run: |
         mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
-        echo "📦 Copying dylib files..."
         DYLIB_COUNT=0
         
-        IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
-        for dylib in "${DYLIB_ARRAY[@]}"; do
-          if [[ "$dylib" == *.zip ]] || [[ "$dylib" == *.ZIP ]]; then
-            continue
-          fi
-          if [ -f "$dylib" ]; then
+        for dylib in $DYLIB_FILES; do
+          if [[ "$dylib" != *.zip ]] && [[ "$dylib" != *.ZIP ]] && [ -f "$dylib" ]; then
             cp "$dylib" $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
-            echo "  ✅ Copied: $dylib"
             DYLIB_COUNT=$((DYLIB_COUNT + 1))
           fi
         done
         
-        for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
+        for dylib in $DYLIB_EXTRACT_DIR/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib")
             cp "$dylib" $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
-            echo "  ✅ Copied from zip: $DYLIB_NAME"
             DYLIB_COUNT=$((DYLIB_COUNT + 1))
           fi
         done
         
-        if [ $DYLIB_COUNT -eq 0 ]; then
-          echo "  ❌ ERROR: No dylib files found!"
-          exit 1
-        fi
-        echo "DYLIB_COUNT=${DYLIB_COUNT}" >> $GITHUB_ENV
+        echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
 
     - name: Extract and copy bundle files
       run: |
         mkdir -p $BUILD_DIR/roothide/Library/PreferenceBundles
-        
-        echo "📦 Extracting bundle zip files..."
-        IFS=' ' read -ra ZIP_ARRAY <<< "$BUNDLE_ZIPS"
-        for zip in "${ZIP_ARRAY[@]}"; do
-          if [ -z "$zip" ]; then
-            echo "  ❌ ERROR: Bundle zip is empty!"
-            exit 1
-          fi
-          if [ ! -f "$zip" ]; then
-            echo "  ❌ ERROR: $zip not found!"
-            exit 1
-          fi
-          echo "  Extracting: $zip"
-          unzip -q "$zip" -d $EXTRACT_DIR/
-          echo "  ✅ Extracted: $zip"
-        done
-        
-        echo ""
-        echo "📦 Copying bundle files..."
         BUNDLE_COUNT=0
         
-        # Use find with simple loop
-        for bundle in $(find "$EXTRACT_DIR" -type d -name "*.bundle" 2>/dev/null); do
-          BUNDLE_NAME=$(basename "$bundle")
-          cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
-          echo "  ✅ Copied bundle: $BUNDLE_NAME"
-          BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+        for zip in $BUNDLE_ZIPS; do
+          if [ -f "$zip" ]; then
+            echo "Extracting: $zip"
+            unzip -q "$zip" -d $EXTRACT_DIR/
+          fi
         done
         
-        echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
+        for bundle in $EXTRACT_DIR/*.bundle; do
+          if [ -d "$bundle" ]; then
+            BUNDLE_NAME=$(basename "$bundle")
+            cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
+            BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+          fi
+        done
+        
+        echo "BUNDLE_COUNT=$BUNDLE_COUNT" >> $GITHUB_ENV
 
     - name: Generate plist files
       run: |
         mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
-        echo "📦 Generating plist files with bundle ID: $BUNDLE_ID"
         PLIST_COUNT=0
         
         for dylib in $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib" .dylib)
             PLIST_FILE="${DYLIB_NAME}.plist"
-            echo "  Generating: $PLIST_FILE"
             
-            cat > "$PLIST_FILE" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Filter</key>
-    <dict>
-        <key>Bundles</key>
-        <array>
-            <string>${BUNDLE_ID}</string>
-        </array>
-    </dict>
-</dict>
-</plist>
-EOF
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > "$PLIST_FILE"
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$PLIST_FILE"
+            echo '<plist version="1.0">' >> "$PLIST_FILE"
+            echo '<dict>' >> "$PLIST_FILE"
+            echo '	<key>Filter</key>' >> "$PLIST_FILE"
+            echo '	<dict>' >> "$PLIST_FILE"
+            echo '		<key>Bundles</key>' >> "$PLIST_FILE"
+            echo '		<array>' >> "$PLIST_FILE"
+            echo "			<string>${BUNDLE_ID}</string>" >> "$PLIST_FILE"
+            echo '		</array>' >> "$PLIST_FILE"
+            echo '	</dict>' >> "$PLIST_FILE"
+            echo '</dict>' >> "$PLIST_FILE"
+            echo '</plist>' >> "$PLIST_FILE"
+            
             cp "$PLIST_FILE" $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
-            echo "  ✅ Generated: $PLIST_FILE"
             PLIST_COUNT=$((PLIST_COUNT + 1))
           fi
         done
-        echo "PLIST_COUNT=${PLIST_COUNT}" >> $GITHUB_ENV
+        
+        echo "PLIST_COUNT=$PLIST_COUNT" >> $GITHUB_ENV
 
     - name: Show package contents
       run: |
-        echo "📊 Package summary:"
-        echo "  - Tweak Name: $TWEAK_NAME"
-        echo "  - Package Version: $PACKAGE_VERSION"
-        echo "  - Architecture: iphoneos-arm64e (Roothide)"
-        echo "  - Dylib files: $DYLIB_COUNT"
-        echo "  - Bundle files: $BUNDLE_COUNT"
-        echo "  - Plist files: $PLIST_COUNT"
-        echo "  - Bundle ID: $BUNDLE_ID"
+        echo "Dylib files: $DYLIB_COUNT"
+        echo "Bundle files: $BUNDLE_COUNT"
+        echo "Plist files: $PLIST_COUNT"
         echo ""
-        echo "📂 Package contents:"
-        ls -la $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/ 2>/dev/null || echo "  No dylibs"
+        echo "DynamicLibraries contents:"
+        ls -la $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/
         echo ""
-        ls -la $BUILD_DIR/roothide/Library/PreferenceBundles/ 2>/dev/null || echo "  No bundles"
+        echo "PreferenceBundles contents:"
+        ls -la $BUILD_DIR/roothide/Library/PreferenceBundles/
 
     - name: Create DEBIAN control file
       run: |
         cat > $BUILD_DIR/roothide/DEBIAN/control << EOF
-        Package: ${{ env.PACKAGE_NAME }}
-        Version: ${{ env.PACKAGE_VERSION }}
+        Package: $PACKAGE_NAME
+        Version: $PACKAGE_VERSION
         Section: Tweaks
         Priority: optional
         Architecture: iphoneos-arm64e
-        Maintainer: ${{ env.MAINTAINER }}
+        Maintainer: $MAINTAINER
         Depends: mobilesubstrate (>= 0.9.5000)
-        Description: ${{ env.DESCRIPTION }}
-        Name: ${{ env.TWEAK_NAME }}
-        Author: ${{ env.MAINTAINER }}
-        Installed-Size: $(du -sk $BUILD_DIR/roothide | cut -f1)
+        Description: $DESCRIPTION
+        Name: $TWEAK_NAME
+        Author: $MAINTAINER
+        Installed-Size: 0
         EOF
 
     - name: Create postinst script
       run: |
-        echo "#!/bin/sh" > $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib" >> $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "chmod 755 /Library/PreferenceBundles/*.bundle" >> $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "killall -9 SpringBoard" >> $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "exit 0" >> $BUILD_DIR/roothide/DEBIAN/postinst
+        cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
+        #!/bin/sh
+        chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib
+        chmod 755 /Library/PreferenceBundles/*.bundle
+        killall -9 SpringBoard
+        exit 0
+        EOF
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
 
     - name: Build DEB package
@@ -268,17 +225,8 @@ EOF
 
     - name: List built packages
       run: |
-        echo "📦 Built packages:"
+        echo "Built packages:"
         ls -la $DEB_DIR/
-        echo ""
-        echo "📊 Package statistics:"
-        echo "  - Tweak Name: $TWEAK_NAME"
-        echo "  - Package Version: $PACKAGE_VERSION"
-        echo "  - Architecture: iphoneos-arm64e (Roothide)"
-        echo "  - Dylibs included: $DYLIB_COUNT"
-        echo "  - Bundles included: $BUNDLE_COUNT"
-        echo "  - Plists generated: $PLIST_COUNT"
-        echo "  - Total package size: $(du -sh $DEB_DIR/ | cut -f1)"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
