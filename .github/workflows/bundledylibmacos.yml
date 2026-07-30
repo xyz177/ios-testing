@@ -24,9 +24,9 @@ on:
         required: true
         default: 'YTKPlus'
       dylib_zips:
-        description: 'Space-separated list of dylib zip files (e.g., YTKPlus.dylib.zip libYTKPlus.dylib.zip)'
-        required: true
-        default: 'YTKPlus.dylib.zip'
+        description: 'Space-separated list of dylib zip files (e.g., YTKPlus.dylib.zip libYTKPlus.dylib.zip) - leave empty for .dylib files only'
+        required: false
+        default: ''
       bundle_zips:
         description: 'Space-separated list of bundle zip files (e.g., YTKPlus.bundle.zip)'
         required: true
@@ -63,7 +63,6 @@ jobs:
         if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
         if [ -z "$DESCRIPTION" ]; then DESCRIPTION="YTKPlus tweak for YouTube"; fi
         if [ -z "$TWEAK_NAME" ]; then TWEAK_NAME="YTKPlus"; fi
-        if [ -z "$DYLIB_ZIPS" ]; then DYLIB_ZIPS="YTKPlus.dylib.zip"; fi
         if [ -z "$BUNDLE_ZIPS" ]; then BUNDLE_ZIPS="YTKPlus.bundle.zip"; fi
         if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
         
@@ -93,34 +92,15 @@ jobs:
         mkdir -p $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
         mkdir -p $BUILD_DIR/roothide/var/jb/Library/PreferenceBundles
 
-    - name: Extract dylib zip files
+    - name: Copy dylib files (direct .dylib files - NO extraction)
       run: |
-        echo "📦 Extracting dylib zip files..."
+        echo "📦 Copying direct .dylib files..."
         DYLIB_COUNT=0
         
-        for zip in $DYLIB_ZIPS; do
-          if [ -f "$zip" ]; then
-            echo "  Extracting: $zip"
-            unzip -q "$zip" -d "$DYLIB_EXTRACT_DIR/"
-            echo "  ✅ Extracted: $zip"
-          else
-            echo "  ⚠️  WARNING: $zip not found!"
-          fi
-        done
-        
-        # Copy extracted dylibs
-        for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
-          if [ -f "$dylib" ]; then
-            DYLIB_NAME=$(basename "$dylib")
-            echo "  Found dylib: $DYLIB_NAME"
-            cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
-            DYLIB_COUNT=$((DYLIB_COUNT + 1))
-          fi
-        done
-        
-        # Also check for direct .dylib files (not zipped)
+        # Copy direct .dylib files (not .dylib.zip)
         for dylib in *.dylib; do
           if [ -f "$dylib" ]; then
+            # Skip if it's a .dylib.zip (this loop handles only .dylib)
             if [[ "$dylib" != *.dylib.zip ]]; then
               echo "  Found direct dylib: $dylib"
               cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
@@ -129,16 +109,56 @@ jobs:
           fi
         done
         
-        if [ $DYLIB_COUNT -eq 0 ]; then
+        echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
+        echo ""
+        echo "📊 Direct dylib files found: $DYLIB_COUNT"
+
+    - name: Extract and copy zipped dylib files (if any)
+      run: |
+        echo "📦 Extracting zipped dylib files..."
+        ZIP_DYLIB_COUNT=0
+        
+        # Only run if DYLIB_ZIPS is not empty
+        if [ -n "$DYLIB_ZIPS" ]; then
+          for zip in $DYLIB_ZIPS; do
+            if [ -f "$zip" ]; then
+              echo "  Extracting: $zip"
+              unzip -q "$zip" -d "$DYLIB_EXTRACT_DIR/"
+              echo "  ✅ Extracted: $zip"
+            else
+              echo "  ⚠️  WARNING: $zip not found!"
+            fi
+          done
+          
+          # Copy extracted dylibs from zip
+          for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
+            if [ -f "$dylib" ]; then
+              DYLIB_NAME=$(basename "$dylib")
+              echo "  Found in zip: $DYLIB_NAME"
+              cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              ZIP_DYLIB_COUNT=$((ZIP_DYLIB_COUNT + 1))
+            fi
+          done
+        else
+          echo "  No dylib zip files specified, skipping..."
+        fi
+        
+        echo "ZIP_DYLIB_COUNT=$ZIP_DYLIB_COUNT" >> $GITHUB_ENV
+
+    - name: Final dylib count
+      run: |
+        TOTAL_DYLIB_COUNT=$((DYLIB_COUNT + ZIP_DYLIB_COUNT))
+        
+        if [ $TOTAL_DYLIB_COUNT -eq 0 ]; then
           echo "  ❌ ERROR: No dylib files found!"
           echo "  Available files in repository:"
           ls -la
           exit 1
         fi
         
-        echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
+        echo "TOTAL_DYLIB_COUNT=$TOTAL_DYLIB_COUNT" >> $GITHUB_ENV
         echo ""
-        echo "📊 Total dylib files found: $DYLIB_COUNT"
+        echo "📊 Total dylib files: $TOTAL_DYLIB_COUNT (Direct: $DYLIB_COUNT, From Zips: $ZIP_DYLIB_COUNT)"
         echo "📂 Dylib files in build:"
         ls -la $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
 
@@ -205,7 +225,9 @@ jobs:
     - name: Show package contents
       run: |
         echo "📊 Package summary:"
-        echo "  - Dylib files: $DYLIB_COUNT"
+        echo "  - Direct dylib files: $DYLIB_COUNT"
+        echo "  - Dylib from zips: $ZIP_DYLIB_COUNT"
+        echo "  - Total dylib files: $TOTAL_DYLIB_COUNT"
         echo "  - Bundle files: $BUNDLE_COUNT"
         echo "  - Plist files: $PLIST_COUNT"
         echo ""
@@ -248,7 +270,7 @@ jobs:
         ls -la $DEB_DIR/
         echo ""
         echo "📊 Package statistics:"
-        echo "  - Dylibs included: $DYLIB_COUNT"
+        echo "  - Total dylibs included: $TOTAL_DYLIB_COUNT"
         echo "  - Bundles included: $BUNDLE_COUNT"
         echo "  - Plists generated: $PLIST_COUNT"
         echo "  - Total package size: $(du -sh $DEB_DIR/ | cut -f1)"
