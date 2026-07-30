@@ -177,19 +177,13 @@ jobs:
         echo "📦 Copying bundle files..."
         BUNDLE_COUNT=0
         
-        # Simple for loop with glob pattern
-        if [ -d "$EXTRACT_DIR" ]; then
-          cd "$EXTRACT_DIR"
-          for bundle in *.bundle; do
-            if [ -d "$bundle" ]; then
-              BUNDLE_NAME=$(basename "$bundle")
-              cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
-              echo "  ✅ Copied bundle: $BUNDLE_NAME"
-              BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
-            fi
-          done
-          cd -
-        fi
+        # Use find with simple loop
+        for bundle in $(find "$EXTRACT_DIR" -type d -name "*.bundle" 2>/dev/null); do
+          BUNDLE_NAME=$(basename "$bundle")
+          cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
+          echo "  ✅ Copied bundle: $BUNDLE_NAME"
+          BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+        done
         
         echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
 
