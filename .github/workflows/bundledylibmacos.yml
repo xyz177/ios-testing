@@ -12,11 +12,11 @@ on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: 'Package identifier (e.g., com.yourrepo.ytkplus)'
+        description: 'Package identifier'
         required: true
         default: 'com.ikarwan.ytkplus'
       package_version:
-        description: 'Package version (e.g., 1.0.0)'
+        description: 'Package version'
         required: true
         default: '1.0.0'
       maintainer:
@@ -53,8 +53,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install dpkg
-      run: |
-        brew install dpkg
+      run: brew install dpkg
 
     - name: Set environment variables
       run: |
@@ -104,9 +103,6 @@ jobs:
       run: |
         echo "📂 Files in repository:"
         ls -la
-        echo ""
-        echo "📦 DYLIB_FILES: $DYLIB_FILES"
-        echo "📦 BUNDLE_ZIPS: $BUNDLE_ZIPS"
 
     - name: Extract zipped dylib files
       run: |
@@ -129,6 +125,7 @@ jobs:
         mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
         echo "📦 Copying dylib files..."
         DYLIB_COUNT=0
+        
         IFS=' ' read -ra DYLIB_ARRAY <<< "$DYLIB_FILES"
         for dylib in "${DYLIB_ARRAY[@]}"; do
           if [[ "$dylib" == *.zip ]] || [[ "$dylib" == *.ZIP ]]; then
@@ -140,6 +137,7 @@ jobs:
             DYLIB_COUNT=$((DYLIB_COUNT + 1))
           fi
         done
+        
         for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib")
@@ -148,6 +146,7 @@ jobs:
             DYLIB_COUNT=$((DYLIB_COUNT + 1))
           fi
         done
+        
         if [ $DYLIB_COUNT -eq 0 ]; then
           echo "  ❌ ERROR: No dylib files found!"
           exit 1
@@ -157,6 +156,7 @@ jobs:
     - name: Extract and copy bundle files
       run: |
         mkdir -p $BUILD_DIR/roothide/Library/PreferenceBundles
+        
         echo "📦 Extracting bundle zip files..."
         IFS=' ' read -ra ZIP_ARRAY <<< "$BUNDLE_ZIPS"
         for zip in "${ZIP_ARRAY[@]}"; do
@@ -172,15 +172,20 @@ jobs:
           unzip -q "$zip" -d $EXTRACT_DIR/
           echo "  ✅ Extracted: $zip"
         done
+        
         echo ""
         echo "📦 Copying bundle files..."
         BUNDLE_COUNT=0
-        for bundle in $(find $EXTRACT_DIR -type d -name "*.bundle" 2>/dev/null); do
-          BUNDLE_NAME=$(basename "$bundle")
-          cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
-          echo "  ✅ Copied bundle: $BUNDLE_NAME"
-          BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
-        done
+        
+        if [ -d "$EXTRACT_DIR" ]; then
+          for bundle in $(find "$EXTRACT_DIR" -type d -name "*.bundle"); do
+            BUNDLE_NAME=$(basename "$bundle")
+            cp -r "$bundle" $BUILD_DIR/roothide/Library/PreferenceBundles/
+            echo "  ✅ Copied bundle: $BUNDLE_NAME"
+            BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+          done
+        fi
+        
         echo "BUNDLE_COUNT=${BUNDLE_COUNT}" >> $GITHUB_ENV
 
     - name: Generate plist files
@@ -188,11 +193,13 @@ jobs:
         mkdir -p $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries
         echo "📦 Generating plist files with bundle ID: $BUNDLE_ID"
         PLIST_COUNT=0
+        
         for dylib in $BUILD_DIR/roothide/Library/MobileSubstrate/DynamicLibraries/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib" .dylib)
             PLIST_FILE="${DYLIB_NAME}.plist"
             echo "  Generating: $PLIST_FILE"
+            
             cat > "$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -247,11 +254,13 @@ EOF
 
     - name: Create postinst script
       run: |
-        echo "#!/bin/sh" > $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib" >> $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "chmod 755 /Library/PreferenceBundles/*.bundle" >> $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "killall -9 SpringBoard" >> $BUILD_DIR/roothide/DEBIAN/postinst
-        echo "exit 0" >> $BUILD_DIR/roothide/DEBIAN/postinst
+        cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
+        #!/bin/sh
+        chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib
+        chmod 755 /Library/PreferenceBundles/*.bundle
+        killall -9 SpringBoard
+        exit 0
+        EOF
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
 
     - name: Build DEB package
