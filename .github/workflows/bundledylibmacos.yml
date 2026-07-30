@@ -14,17 +14,21 @@ on:
       maintainer:
         description: 'Maintainer name and email'
         required: true
-        default: 'Your Name'
+        default: 'Your Name <email@example.com>'
       description:
         description: 'Package description'
         required: true
-        default: 'tweak for YouTube'
+        default: 'YTKPlus tweak for YouTube'
       tweak_name:
         description: 'Main tweak name'
         required: true
         default: 'YTKPlus'
+      dylib_zips:
+        description: 'Space-separated list of dylib zip files (e.g., YTKPlus.dylib.zip libYTKPlus.dylib.zip)'
+        required: true
+        default: 'YTKPlus.dylib.zip'
       bundle_zips:
-        description: 'Space-separated list of bundle zip files'
+        description: 'Space-separated list of bundle zip files (e.g., YTKPlus.bundle.zip)'
         required: true
         default: 'YTKPlus.bundle.zip'
       bundle_id:
@@ -50,6 +54,7 @@ jobs:
         MAINTAINER="${{ github.event.inputs.maintainer }}"
         DESCRIPTION="${{ github.event.inputs.description }}"
         TWEAK_NAME="${{ github.event.inputs.tweak_name }}"
+        DYLIB_ZIPS="${{ github.event.inputs.dylib_zips }}"
         BUNDLE_ZIPS="${{ github.event.inputs.bundle_zips }}"
         BUNDLE_ID="${{ github.event.inputs.bundle_id }}"
         
@@ -58,6 +63,7 @@ jobs:
         if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
         if [ -z "$DESCRIPTION" ]; then DESCRIPTION="YTKPlus tweak for YouTube"; fi
         if [ -z "$TWEAK_NAME" ]; then TWEAK_NAME="YTKPlus"; fi
+        if [ -z "$DYLIB_ZIPS" ]; then DYLIB_ZIPS="YTKPlus.dylib.zip"; fi
         if [ -z "$BUNDLE_ZIPS" ]; then BUNDLE_ZIPS="YTKPlus.bundle.zip"; fi
         if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
         
@@ -69,6 +75,7 @@ jobs:
         echo "DESCRIPTION=${DESCRIPTION}" >> $GITHUB_ENV
         echo "TWEAK_NAME=${TWEAK_NAME}" >> $GITHUB_ENV
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
+        echo "DYLIB_ZIPS=${DYLIB_ZIPS}" >> $GITHUB_ENV
         echo "BUNDLE_ZIPS=${BUNDLE_ZIPS}" >> $GITHUB_ENV
         echo "BUNDLE_ID=${BUNDLE_ID}" >> $GITHUB_ENV
         echo "BUILD_DIR=$(pwd)/build" >> $GITHUB_ENV
@@ -86,26 +93,26 @@ jobs:
         mkdir -p $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
         mkdir -p $BUILD_DIR/roothide/var/jb/Library/PreferenceBundles
 
-    - name: Auto-detect ALL dylib files (including .dylib.zip)
+    - name: Extract dylib zip files
       run: |
-        echo "📦 Scanning for dylib files..."
+        echo "📦 Extracting dylib zip files..."
         DYLIB_COUNT=0
         
-        # First, extract any .dylib.zip files
-        for zip in *.dylib.zip; do
+        for zip in $DYLIB_ZIPS; do
           if [ -f "$zip" ]; then
-            echo "  Found zipped dylib: $zip"
             echo "  Extracting: $zip"
             unzip -q "$zip" -d "$DYLIB_EXTRACT_DIR/"
             echo "  ✅ Extracted: $zip"
+          else
+            echo "  ⚠️  WARNING: $zip not found!"
           fi
         done
         
-        # Copy extracted dylibs from zip
+        # Copy extracted dylibs
         for dylib in "$DYLIB_EXTRACT_DIR"/*.dylib; do
           if [ -f "$dylib" ]; then
             DYLIB_NAME=$(basename "$dylib")
-            echo "  Found in zip: $DYLIB_NAME"
+            echo "  Found dylib: $DYLIB_NAME"
             cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
             DYLIB_COUNT=$((DYLIB_COUNT + 1))
           fi
@@ -114,7 +121,6 @@ jobs:
         # Also check for direct .dylib files (not zipped)
         for dylib in *.dylib; do
           if [ -f "$dylib" ]; then
-            # Skip if it's a .dylib.zip (the loop above handles zips)
             if [[ "$dylib" != *.dylib.zip ]]; then
               echo "  Found direct dylib: $dylib"
               cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
