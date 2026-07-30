@@ -228,7 +228,6 @@ jobs:
         #!/bin/sh
         chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib
         chmod 755 /var/jb/Library/PreferenceBundles/*.bundle
-        killall -9 SpringBoard
         exit 0
         EOF
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
