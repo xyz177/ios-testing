@@ -297,25 +297,8 @@ EOF
       run: |
         cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
         #!/bin/sh
-        
-        echo "Setting permissions for dylib files..."
-        for dylib in /Library/MobileSubstrate/DynamicLibraries/*.dylib; do
-            if [ -f "$dylib" ]; then
-                chmod 755 "$dylib"
-                echo "  ✅ $(basename "$dylib")"
-            fi
-        done
-        
-        echo "Setting permissions for bundle files..."
-        for bundle in /Library/PreferenceBundles/*.bundle; do
-            if [ -d "$bundle" ]; then
-                chmod 755 "$bundle"
-                find "$bundle" -type f -exec chmod 644 {} \; 2>/dev/null
-                echo "  ✅ $(basename "$bundle")"
-            fi
-        done
-        
-        echo "Respring SpringBoard..."
+        chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true
+        chmod 755 /Library/PreferenceBundles/*.bundle 2>/dev/null || true
         killall -9 SpringBoard 2>/dev/null || true
         exit 0
         EOF
