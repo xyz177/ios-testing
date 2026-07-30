@@ -23,8 +23,12 @@ on:
         description: 'Main tweak name'
         required: true
         default: 'YTKPlus'
+      dylib_files:
+        description: 'Space-separated list of direct dylib files (e.g., YTKPlus.dylib libYTKPlus.dylib)'
+        required: true
+        default: 'YTKPlus.dylib'
       dylib_zips:
-        description: 'Space-separated list of dylib zip files (e.g., YTKPlus.dylib.zip libYTKPlus.dylib.zip) - leave empty for .dylib files only'
+        description: 'Space-separated list of dylib zip files (e.g., YTKPlus.dylib.zip libYTKPlus.dylib.zip)'
         required: false
         default: ''
       bundle_zips:
@@ -54,6 +58,7 @@ jobs:
         MAINTAINER="${{ github.event.inputs.maintainer }}"
         DESCRIPTION="${{ github.event.inputs.description }}"
         TWEAK_NAME="${{ github.event.inputs.tweak_name }}"
+        DYLIB_FILES="${{ github.event.inputs.dylib_files }}"
         DYLIB_ZIPS="${{ github.event.inputs.dylib_zips }}"
         BUNDLE_ZIPS="${{ github.event.inputs.bundle_zips }}"
         BUNDLE_ID="${{ github.event.inputs.bundle_id }}"
@@ -63,6 +68,7 @@ jobs:
         if [ -z "$MAINTAINER" ]; then MAINTAINER="Your Name <email@example.com>"; fi
         if [ -z "$DESCRIPTION" ]; then DESCRIPTION="YTKPlus tweak for YouTube"; fi
         if [ -z "$TWEAK_NAME" ]; then TWEAK_NAME="YTKPlus"; fi
+        if [ -z "$DYLIB_FILES" ]; then DYLIB_FILES="YTKPlus.dylib"; fi
         if [ -z "$BUNDLE_ZIPS" ]; then BUNDLE_ZIPS="YTKPlus.bundle.zip"; fi
         if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
         
@@ -74,6 +80,7 @@ jobs:
         echo "DESCRIPTION=${DESCRIPTION}" >> $GITHUB_ENV
         echo "TWEAK_NAME=${TWEAK_NAME}" >> $GITHUB_ENV
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
+        echo "DYLIB_FILES=${DYLIB_FILES}" >> $GITHUB_ENV
         echo "DYLIB_ZIPS=${DYLIB_ZIPS}" >> $GITHUB_ENV
         echo "BUNDLE_ZIPS=${BUNDLE_ZIPS}" >> $GITHUB_ENV
         echo "BUNDLE_ID=${BUNDLE_ID}" >> $GITHUB_ENV
@@ -92,26 +99,24 @@ jobs:
         mkdir -p $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
         mkdir -p $BUILD_DIR/roothide/var/jb/Library/PreferenceBundles
 
-    - name: Copy dylib files (direct .dylib files - NO extraction)
+    - name: Copy direct dylib files
       run: |
-        echo "📦 Copying direct .dylib files..."
+        echo "📦 Copying direct dylib files..."
         DYLIB_COUNT=0
         
-        # Copy direct .dylib files (not .dylib.zip)
-        for dylib in *.dylib; do
+        for dylib in $DYLIB_FILES; do
           if [ -f "$dylib" ]; then
-            # Skip if it's a .dylib.zip (this loop handles only .dylib)
-            if [[ "$dylib" != *.dylib.zip ]]; then
-              echo "  Found direct dylib: $dylib"
-              cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              DYLIB_COUNT=$((DYLIB_COUNT + 1))
-            fi
+            echo "  Found direct dylib: $dylib"
+            cp "$dylib" $BUILD_DIR/roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+            DYLIB_COUNT=$((DYLIB_COUNT + 1))
+          else
+            echo "  ⚠️  WARNING: $dylib not found!"
           fi
         done
         
         echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
         echo ""
-        echo "📊 Direct dylib files found: $DYLIB_COUNT"
+        echo "📊 Direct dylib files copied: $DYLIB_COUNT"
 
     - name: Extract and copy zipped dylib files (if any)
       run: |
