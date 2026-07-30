@@ -2,11 +2,16 @@ name: Build Jailbreak DEB (Roothide arm64e)
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
     paths-ignore:
       - '*.dylib'
       - '*.zip'
       - '*.bundle'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
   workflow_dispatch:
     inputs:
       package_name:
@@ -295,13 +300,11 @@ EOF
 
     - name: Create postinst script
       run: |
-        cat > $BUILD_DIR/roothide/DEBIAN/postinst << 'EOF'
-        #!/bin/sh
-        chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true
-        chmod 755 /Library/PreferenceBundles/*.bundle 2>/dev/null || true
-        killall -9 SpringBoard 2>/dev/null || true
-        exit 0
-        EOF
+        echo '#!/bin/sh' > $BUILD_DIR/roothide/DEBIAN/postinst
+        echo 'chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true' >> $BUILD_DIR/roothide/DEBIAN/postinst
+        echo 'chmod 755 /Library/PreferenceBundles/*.bundle 2>/dev/null || true' >> $BUILD_DIR/roothide/DEBIAN/postinst
+        echo 'killall -9 SpringBoard 2>/dev/null || true' >> $BUILD_DIR/roothide/DEBIAN/postinst
+        echo 'exit 0' >> $BUILD_DIR/roothide/DEBIAN/postinst
         chmod 755 $BUILD_DIR/roothide/DEBIAN/postinst
 
     - name: Build DEB package
