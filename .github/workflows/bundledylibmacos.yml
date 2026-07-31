@@ -14,11 +14,11 @@ on:
       maintainer:
         description: 'Maintainer name and email'
         required: true
-        default: 'Your Name <email@example.com>'
+        default: 'Your Name'
       description:
         description: 'Package description'
         required: true
-        default: 'YTKPlus tweak for YouTube'
+        default: 'tweak for YouTube'
       tweak_name:
         description: 'Main tweak name'
         required: true
@@ -72,7 +72,7 @@ jobs:
         if [ -z "$BUNDLE_ZIPS" ]; then BUNDLE_ZIPS="YTKPlus.bundle.zip"; fi
         if [ -z "$BUNDLE_ID" ]; then BUNDLE_ID="com.google.ios.youtube"; fi
         
-        TAG_NAME="${TWEAK_NAME}-${PACKAGE_VERSION}"
+        TAG_NAME="${TWEAK_NAME}-${PACKAGE_VERSION}-Roothide"
         
         echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
         echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> $GITHUB_ENV
