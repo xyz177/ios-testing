@@ -11,7 +11,7 @@ on:
       package_id:
         description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.youtube.yt'
+        default: 'com.dvntdm.ytlite'
         type: string
       version:
         description: 'Package version (e.g., 1.0.0)'
@@ -26,7 +26,7 @@ on:
       description:
         description: 'Package description'
         required: true
-        default: 'tweak for YouTube'
+        default: 'YTKACE tweak for YouTube'
         type: string
       bundle_id:
         description: 'Bundle ID to inject into (e.g., com.google.ios.youtube)'
@@ -139,10 +139,31 @@ jobs:
           </plist>
           EOF
 
-      - name: Unzip bundle
+      - name: Extract bundle zip
         run: |
-          echo "📦 Extracting bundle..."
-          unzip -q ${{ env.BUNDLE_ZIP }} -d .
+          echo "📦 Extracting bundle zip..."
+          BUNDLE_ZIP="${{ env.BUNDLE_ZIP }}"
+          BUNDLE_NAME="${{ env.TWEAK_NAME }}"
+          
+          # Extract the bundle zip
+          unzip -q "$BUNDLE_ZIP" -d .
+          
+          # Find the extracted .bundle directory
+          EXTRACTED_BUNDLE=$(find . -maxdepth 2 -type d -name "*.bundle" ! -path "./.*" | head -1)
+          
+          if [ -n "$EXTRACTED_BUNDLE" ]; then
+            BUNDLE_DIR_NAME=$(basename "$EXTRACTED_BUNDLE")
+            echo "  ✅ Found bundle: $BUNDLE_DIR_NAME"
+            echo "BUNDLE_DIR_NAME=$BUNDLE_DIR_NAME" >> $GITHUB_ENV
+          else
+            echo "  ⚠️  No .bundle found after extraction!"
+            echo "  Contents of current directory:"
+            ls -la
+            echo ""
+            echo "  Looking for any .bundle..."
+            find . -name "*.bundle" -type d 2>/dev/null || echo "  None found"
+            exit 1
+          fi
 
       - name: Build Rootful DEB
         run: |
@@ -154,7 +175,7 @@ jobs:
           
           cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
+          cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
           Package: ${{ env.PACKAGE_ID }}
@@ -179,7 +200,7 @@ jobs:
           
           cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
+          cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/control << EOF
           Package: ${{ env.PACKAGE_ID }}.rootless
@@ -204,7 +225,7 @@ jobs:
           
           cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
+          cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-roothide/DEBIAN/control << EOF
           Package: ${{ env.PACKAGE_ID }}.roothide
@@ -230,6 +251,7 @@ jobs:
           echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
           echo "  - Dylib source: ${{ env.DYLIB_FILE }}"
           echo "  - Dylib zipped: ${{ env.DYLIB_IS_ZIPPED }}"
+          echo "  - Bundle dir: ${{ env.BUNDLE_DIR_NAME }}"
           echo ""
           echo "  📱 Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
           echo "  📱 Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
