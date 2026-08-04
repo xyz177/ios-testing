@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
 
 env:
-  TWEAK_NAME: YTLite
+  TWEAK_NAME: YTKACE
   PACKAGE_ID: com.dvntdm.ytlite
   VERSION: 5.2.2
 
