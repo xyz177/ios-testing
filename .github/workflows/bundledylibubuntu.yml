@@ -11,7 +11,7 @@ on:
       package_id:
         description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.example.ytlite'
+        default: 'com.youtube.ytkace'
         type: string
       version:
         description: 'Package version (e.g., 1.0.0)'
@@ -167,6 +167,31 @@ jobs:
           
           dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
 
+      - name: Build Roothide DEB
+        run: |
+          echo "📦 Building Roothide DEB..."
+          
+          mkdir -p ${{ env.TWEAK_NAME }}-roothide/DEBIAN
+          mkdir -p ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
+          
+          cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
+          
+          cat > ${{ env.TWEAK_NAME }}-roothide/DEBIAN/control << EOF
+          Package: ${{ env.PACKAGE_ID }}.roothide
+          Name: ${{ env.TWEAK_NAME }} (Roothide)
+          Version: ${{ env.VERSION }}
+          Architecture: iphoneos-arm64e
+          Description: ${{ env.DESCRIPTION }} - Roothide
+          Maintainer: ${{ env.MAINTAINER }}
+          Section: Tweaks
+          Depends: ellekit (>= 1.0.0)
+          EOF
+          
+          dpkg-deb -b ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+
       - name: List built packages
         run: |
           echo "📦 Built packages:"
@@ -176,8 +201,10 @@ jobs:
           echo "  - Tweak: ${{ env.TWEAK_NAME }}"
           echo "  - Version: ${{ env.VERSION }}"
           echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
-          echo "  - Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
-          echo "  - Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
+          echo ""
+          echo "  📱 Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
+          echo "  📱 Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
+          echo "  📱 Roothide: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb"
 
       - name: Create Release
         if: env.CREATE_RELEASE == 'true'
@@ -188,6 +215,7 @@ jobs:
           files: |
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+            ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
           body: ""
           generate_release_notes: false
           draft: false
