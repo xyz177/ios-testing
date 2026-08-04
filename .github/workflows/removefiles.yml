@@ -7,10 +7,6 @@ on:
         required: true
         type: string
         default: ''
-      confirm:
-        description: 'Type DELETE to confirm'
-        required: true
-        type: string
 
 jobs:
   delete:
