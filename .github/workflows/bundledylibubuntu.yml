@@ -11,7 +11,7 @@ on:
       package_id:
         description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.youtube.ytkace'
+        default: 'com.youtube.yt'
         type: string
       version:
         description: 'Package version (e.g., 1.0.0)'
@@ -34,7 +34,7 @@ on:
         default: 'com.google.ios.youtube'
         type: string
       dylib_file:
-        description: 'Dylib filename (e.g., YTKACE.dylib)'
+        description: 'Dylib filename or zip (e.g., YTKACE.dylib or YTKACE.dylib.zip)'
         required: true
         default: 'YTKACE.dylib'
         type: string
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev unzip
 
       - name: Check files exist
         run: |
@@ -93,6 +93,33 @@ jobs:
           echo "CREATE_RELEASE=${{ github.event.inputs.create_release }}" >> $GITHUB_ENV
           echo "RELEASE_TAG=${{ github.event.inputs.tweak_name }}-${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
+      - name: Extract dylib if zipped
+        run: |
+          DYLIB="${{ env.DYLIB_FILE }}"
+          
+          # Check if it's a zip file
+          if [[ "$DYLIB" == *.zip ]] || [[ "$DYLIB" == *.ZIP ]]; then
+            echo "📦 Extracting zipped dylib: $DYLIB"
+            unzip -q "$DYLIB" -d .
+            
+            # Find the extracted .dylib file
+            EXTRACTED_DYLIB=$(find . -maxdepth 2 -name "*.dylib" ! -path "./.*" | head -1)
+            if [ -n "$EXTRACTED_DYLIB" ]; then
+              EXTRACTED_NAME=$(basename "$EXTRACTED_DYLIB")
+              echo "  ✅ Extracted: $EXTRACTED_NAME"
+              echo "EXTRACTED_DYLIB=$EXTRACTED_NAME" >> $GITHUB_ENV
+              echo "DYLIB_IS_ZIPPED=true" >> $GITHUB_ENV
+            else
+              echo "  ❌ No .dylib found after extraction!"
+              exit 1
+            fi
+          else
+            # It's a direct .dylib file
+            echo "📦 Using direct dylib: $DYLIB"
+            echo "EXTRACTED_DYLIB=$DYLIB" >> $GITHUB_ENV
+            echo "DYLIB_IS_ZIPPED=false" >> $GITHUB_ENV
+          fi
+
       - name: Generate main plist
         run: |
           echo "📦 Generating ${{ env.TWEAK_NAME }}.plist..."
@@ -125,7 +152,7 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
@@ -150,7 +177,7 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
@@ -175,7 +202,7 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
@@ -201,6 +228,8 @@ jobs:
           echo "  - Tweak: ${{ env.TWEAK_NAME }}"
           echo "  - Version: ${{ env.VERSION }}"
           echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
+          echo "  - Dylib source: ${{ env.DYLIB_FILE }}"
+          echo "  - Dylib zipped: ${{ env.DYLIB_IS_ZIPPED }}"
           echo ""
           echo "  📱 Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
           echo "  📱 Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
