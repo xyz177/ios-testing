@@ -11,7 +11,7 @@ on:
       package_id:
         description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.dvntdm.ytlite'
+        default: 'com.example.ytlite'
         type: string
       version:
         description: 'Package version (e.g., 1.0.0)'
@@ -26,7 +26,7 @@ on:
       description:
         description: 'Package description'
         required: true
-        default: 'YTKACE tweak for YouTube'
+        default: 'tweak for YouTube'
         type: string
       bundle_id:
         description: 'Bundle ID to inject into (e.g., com.google.ios.youtube)'
