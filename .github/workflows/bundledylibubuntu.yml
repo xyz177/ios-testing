@@ -33,8 +33,8 @@ on:
         required: true
         default: 'com.google.ios.youtube'
         type: string
-      dylib_file:
-        description: 'Dylib filename or zip (e.g., YTKACE.dylib or YTKACE.dylib.zip)'
+      dylib_files:
+        description: 'Space-separated list of dylib files or zips (e.g., YTKACE.dylib libYTKPlus.dylib.zip)'
         required: true
         default: 'YTKACE.dylib'
         type: string
@@ -64,13 +64,18 @@ jobs:
       - name: Check files exist
         run: |
           echo "📂 Checking files..."
-          if [ -f "${{ github.event.inputs.dylib_file }}" ]; then
-            echo "  ✅ ${{ github.event.inputs.dylib_file }} exists"
-          else
-            echo "  ❌ ${{ github.event.inputs.dylib_file }} NOT found!"
-            ls -la
-            exit 1
-          fi
+          
+          # Check each dylib file
+          DYLIB_FILES="${{ github.event.inputs.dylib_files }}"
+          for file in $DYLIB_FILES; do
+            if [ -f "$file" ]; then
+              echo "  ✅ $file exists"
+            else
+              echo "  ❌ $file NOT found!"
+              ls -la
+              exit 1
+            fi
+          done
           
           if [ -f "${{ github.event.inputs.bundle_zip }}" ]; then
             echo "  ✅ ${{ github.event.inputs.bundle_zip }} exists"
@@ -88,37 +93,56 @@ jobs:
           echo "MAINTAINER=${{ github.event.inputs.maintainer }}" >> $GITHUB_ENV
           echo "DESCRIPTION=${{ github.event.inputs.description }}" >> $GITHUB_ENV
           echo "BUNDLE_ID=${{ github.event.inputs.bundle_id }}" >> $GITHUB_ENV
-          echo "DYLIB_FILE=${{ github.event.inputs.dylib_file }}" >> $GITHUB_ENV
+          echo "DYLIB_FILES=${{ github.event.inputs.dylib_files }}" >> $GITHUB_ENV
           echo "BUNDLE_ZIP=${{ github.event.inputs.bundle_zip }}" >> $GITHUB_ENV
           echo "CREATE_RELEASE=${{ github.event.inputs.create_release }}" >> $GITHUB_ENV
           echo "RELEASE_TAG=${{ github.event.inputs.tweak_name }}-${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
-      - name: Extract dylib if zipped
+      - name: Extract dylibs if zipped
         run: |
-          DYLIB="${{ env.DYLIB_FILE }}"
+          echo "📦 Processing dylib files..."
+          DYLIB_FILES="${{ env.DYLIB_FILES }}"
+          EXTRACTED_DYLIB_NAMES=""
+          DYLIB_COUNT=0
           
-          # Check if it's a zip file
-          if [[ "$DYLIB" == *.zip ]] || [[ "$DYLIB" == *.ZIP ]]; then
-            echo "📦 Extracting zipped dylib: $DYLIB"
-            unzip -q "$DYLIB" -d .
-            
-            # Find the extracted .dylib file
-            EXTRACTED_DYLIB=$(find . -maxdepth 2 -name "*.dylib" ! -path "./.*" | head -1)
-            if [ -n "$EXTRACTED_DYLIB" ]; then
-              EXTRACTED_NAME=$(basename "$EXTRACTED_DYLIB")
-              echo "  ✅ Extracted: $EXTRACTED_NAME"
-              echo "EXTRACTED_DYLIB=$EXTRACTED_NAME" >> $GITHUB_ENV
-              echo "DYLIB_IS_ZIPPED=true" >> $GITHUB_ENV
+          mkdir -p dylib_extracted
+          
+          for file in $DYLIB_FILES; do
+            # Check if it's a zip file
+            if [[ "$file" == *.zip ]] || [[ "$file" == *.ZIP ]]; then
+              echo "  Extracting zipped dylib: $file"
+              unzip -q "$file" -d dylib_extracted/
+              DYLIB_COUNT=$((DYLIB_COUNT + 1))
             else
-              echo "  ❌ No .dylib found after extraction!"
-              exit 1
+              # It's a direct .dylib file - copy it to the extracted folder
+              echo "  Using direct dylib: $file"
+              cp "$file" dylib_extracted/
+              DYLIB_COUNT=$((DYLIB_COUNT + 1))
             fi
-          else
-            # It's a direct .dylib file
-            echo "📦 Using direct dylib: $DYLIB"
-            echo "EXTRACTED_DYLIB=$DYLIB" >> $GITHUB_ENV
-            echo "DYLIB_IS_ZIPPED=false" >> $GITHUB_ENV
+          done
+          
+          # Get all dylib names (without path)
+          for dylib in dylib_extracted/*.dylib; do
+            if [ -f "$dylib" ]; then
+              DYLIB_NAME=$(basename "$dylib")
+              echo "  Found dylib: $DYLIB_NAME"
+              if [ -z "$EXTRACTED_DYLIB_NAMES" ]; then
+                EXTRACTED_DYLIB_NAMES="$DYLIB_NAME"
+              else
+                EXTRACTED_DYLIB_NAMES="$EXTRACTED_DYLIB_NAMES $DYLIB_NAME"
+              fi
+            fi
+          done
+          
+          if [ -z "$EXTRACTED_DYLIB_NAMES" ]; then
+            echo "  ❌ No dylib files found!"
+            exit 1
           fi
+          
+          echo "EXTRACTED_DYLIB_NAMES=$EXTRACTED_DYLIB_NAMES" >> $GITHUB_ENV
+          echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
+          echo ""
+          echo "📊 Total dylib files: $DYLIB_COUNT"
 
       - name: Generate main plist
         run: |
@@ -139,11 +163,44 @@ jobs:
           </plist>
           EOF
 
+      - name: Generate plists for each dylib
+        run: |
+          echo "📦 Generating plist files for each dylib..."
+          PLIST_COUNT=0
+          
+          for dylib in dylib_extracted/*.dylib; do
+            if [ -f "$dylib" ]; then
+              DYLIB_NAME=$(basename "$dylib" .dylib)
+              PLIST_FILE="${DYLIB_NAME}.plist"
+              
+              echo "  Generating: $PLIST_FILE"
+              
+              cat > "$PLIST_FILE" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>Filter</key>
+              <dict>
+                  <key>Bundles</key>
+                  <array>
+                      <string>${{ env.BUNDLE_ID }}</string>
+                  </array>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+              
+              PLIST_COUNT=$((PLIST_COUNT + 1))
+            fi
+          done
+          
+          echo "PLIST_COUNT=$PLIST_COUNT" >> $GITHUB_ENV
+
       - name: Extract bundle zip
         run: |
           echo "📦 Extracting bundle zip..."
           BUNDLE_ZIP="${{ env.BUNDLE_ZIP }}"
-          BUNDLE_NAME="${{ env.TWEAK_NAME }}"
           
           # Extract the bundle zip
           unzip -q "$BUNDLE_ZIP" -d .
@@ -159,9 +216,6 @@ jobs:
             echo "  ⚠️  No .bundle found after extraction!"
             echo "  Contents of current directory:"
             ls -la
-            echo ""
-            echo "  Looking for any .bundle..."
-            find . -name "*.bundle" -type d 2>/dev/null || echo "  None found"
             exit 1
           fi
 
@@ -173,8 +227,22 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
-          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          # Copy all dylib files
+          for dylib in dylib_extracted/*.dylib; do
+            if [ -f "$dylib" ]; then
+              cp "$dylib" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied: $(basename "$dylib")"
+            fi
+          done
+          
+          # Copy all plist files
+          for plist in *.plist; do
+            if [ -f "$plist" ]; then
+              cp "$plist" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied: $plist"
+            fi
+          done
+          
           cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
@@ -198,8 +266,22 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          # Copy all dylib files
+          for dylib in dylib_extracted/*.dylib; do
+            if [ -f "$dylib" ]; then
+              cp "$dylib" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied: $(basename "$dylib")"
+            fi
+          done
+          
+          # Copy all plist files
+          for plist in *.plist; do
+            if [ -f "$plist" ]; then
+              cp "$plist" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied: $plist"
+            fi
+          done
+          
           cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/control << EOF
@@ -223,8 +305,22 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          cp ${{ env.EXTRACTED_DYLIB }} ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          # Copy all dylib files
+          for dylib in dylib_extracted/*.dylib; do
+            if [ -f "$dylib" ]; then
+              cp "$dylib" ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied: $(basename "$dylib")"
+            fi
+          done
+          
+          # Copy all plist files
+          for plist in *.plist; do
+            if [ -f "$plist" ]; then
+              cp "$plist" ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              echo "  ✅ Copied: $plist"
+            fi
+          done
+          
           cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-roothide/DEBIAN/control << EOF
@@ -249,8 +345,8 @@ jobs:
           echo "  - Tweak: ${{ env.TWEAK_NAME }}"
           echo "  - Version: ${{ env.VERSION }}"
           echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
-          echo "  - Dylib source: ${{ env.DYLIB_FILE }}"
-          echo "  - Dylib zipped: ${{ env.DYLIB_IS_ZIPPED }}"
+          echo "  - Dylib count: ${{ env.DYLIB_COUNT }}"
+          echo "  - Plist count: ${{ env.PLIST_COUNT }}"
           echo "  - Bundle dir: ${{ env.BUNDLE_DIR_NAME }}"
           echo ""
           echo "  📱 Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
