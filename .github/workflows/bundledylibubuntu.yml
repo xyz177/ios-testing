@@ -43,16 +43,6 @@ on:
         required: true
         default: 'YTKACE.bundle.zip'
         type: string
-      additional_plists:
-        description: 'Additional plist files to generate (space-separated, e.g., file1 file2)'
-        required: false
-        default: ''
-        type: string
-      additional_bundle_ids:
-        description: 'Bundle IDs for additional plists (space-separated, matching order)'
-        required: false
-        default: ''
-        type: string
       create_release:
         description: 'Create GitHub release?'
         required: true
@@ -101,9 +91,7 @@ jobs:
           echo "DYLIB_FILE=${{ github.event.inputs.dylib_file }}" >> $GITHUB_ENV
           echo "BUNDLE_ZIP=${{ github.event.inputs.bundle_zip }}" >> $GITHUB_ENV
           echo "CREATE_RELEASE=${{ github.event.inputs.create_release }}" >> $GITHUB_ENV
-          echo "ADDITIONAL_PLISTS=${{ github.event.inputs.additional_plists }}" >> $GITHUB_ENV
-          echo "ADDITIONAL_BUNDLE_IDS=${{ github.event.inputs.additional_bundle_ids }}" >> $GITHUB_ENV
-          echo "RELEASE_TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${{ github.event.inputs.tweak_name }}-${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
       - name: Generate main plist
         run: |
@@ -124,43 +112,6 @@ jobs:
           </plist>
           EOF
 
-      - name: Generate additional plists
-        if: env.ADDITIONAL_PLISTS != ''
-        run: |
-          echo "📦 Generating additional plists..."
-          
-          IFS=' ' read -ra PLIST_ARRAY <<< "$ADDITIONAL_PLISTS"
-          IFS=' ' read -ra BUNDLE_ARRAY <<< "$ADDITIONAL_BUNDLE_IDS"
-          
-          for i in "${!PLIST_ARRAY[@]}"; do
-            PLIST_NAME="${PLIST_ARRAY[$i]}"
-            PLIST_FILE="${PLIST_NAME}.plist"
-            
-            if [ $i -lt ${#BUNDLE_ARRAY[@]} ]; then
-              BUNDLE="${BUNDLE_ARRAY[$i]}"
-            else
-              BUNDLE="${{ env.BUNDLE_ID }}"
-            fi
-            
-            echo "  Generating: $PLIST_FILE (bundle: $BUNDLE)"
-            
-            cat > "$PLIST_FILE" << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>Filter</key>
-              <dict>
-                  <key>Bundles</key>
-                  <array>
-                      <string>${BUNDLE}</string>
-                  </array>
-              </dict>
-          </dict>
-          </plist>
-          EOF
-          done
-
       - name: Unzip bundle
         run: |
           echo "📦 Extracting bundle..."
@@ -176,15 +127,6 @@ jobs:
           
           cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
-          
-          if [ -n "$ADDITIONAL_PLISTS" ]; then
-            for plist in $ADDITIONAL_PLISTS; do
-              if [ -f "${plist}.plist" ]; then
-                cp "${plist}.plist" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
-              fi
-            done
-          fi
-          
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
@@ -210,15 +152,6 @@ jobs:
           
           cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          
-          if [ -n "$ADDITIONAL_PLISTS" ]; then
-            for plist in $ADDITIONAL_PLISTS; do
-              if [ -f "${plist}.plist" ]; then
-                cp "${plist}.plist" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              fi
-            done
-          fi
-          
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
           
           cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/control << EOF
@@ -242,6 +175,7 @@ jobs:
           echo "📊 Package statistics:"
           echo "  - Tweak: ${{ env.TWEAK_NAME }}"
           echo "  - Version: ${{ env.VERSION }}"
+          echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
           echo "  - Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
           echo "  - Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
 
