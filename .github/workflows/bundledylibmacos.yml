@@ -1,4 +1,4 @@
-name: Build Jailbreak DEB
+name: Build Jailbreak DEB (macos)
 
 on:
   workflow_dispatch:
