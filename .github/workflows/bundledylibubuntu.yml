@@ -1,11 +1,66 @@
-name: Build Jailbreak DEB (ubuntu)
+name: Build Jailbreak DEB (Ubuntu)
+
 on:
   workflow_dispatch:
-
-env:
-  TWEAK_NAME: YTKACE
-  PACKAGE_ID: com.dvntdm.ytlite
-  VERSION: 5.2.2
+    inputs:
+      tweak_name:
+        description: 'Tweak name (e.g., YTKACE)'
+        required: true
+        default: 'YTKACE'
+        type: string
+      package_id:
+        description: 'Package identifier (e.g., com.yourrepo.ytkace)'
+        required: true
+        default: 'com.dvntdm.ytlite'
+        type: string
+      version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: true
+        default: '5.2.2'
+        type: string
+      maintainer:
+        description: 'Maintainer name'
+        required: true
+        default: 'ace'
+        type: string
+      description:
+        description: 'Package description'
+        required: true
+        default: 'YTKACE tweak for YouTube'
+        type: string
+      bundle_id:
+        description: 'Bundle ID to inject into (e.g., com.google.ios.youtube)'
+        required: true
+        default: 'com.google.ios.youtube'
+        type: string
+      dylib_file:
+        description: 'Dylib filename (e.g., YTKACE.dylib)'
+        required: true
+        default: 'YTKACE.dylib'
+        type: string
+      bundle_zip:
+        description: 'Bundle zip filename (e.g., YTKACE.bundle.zip)'
+        required: true
+        default: 'YTKACE.bundle.zip'
+        type: string
+      additional_plists:
+        description: 'Additional plist files to generate (space-separated, e.g., file1 file2)'
+        required: false
+        default: ''
+        type: string
+      additional_bundle_ids:
+        description: 'Bundle IDs for additional plists (space-separated, matching order)'
+        required: false
+        default: ''
+        type: string
+      create_release:
+        description: 'Create GitHub release?'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build:
@@ -13,16 +68,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+
       - name: Check files exist
         run: |
-          ls -la ${{ env.TWEAK_NAME }}.dylib
-         # ls -la file.dylib
-          ls -la ${{ env.TWEAK_NAME }}.bundle.zip
+          echo "📂 Checking files..."
+          if [ -f "${{ github.event.inputs.dylib_file }}" ]; then
+            echo "  ✅ ${{ github.event.inputs.dylib_file }} exists"
+          else
+            echo "  ❌ ${{ github.event.inputs.dylib_file }} NOT found!"
+            ls -la
+            exit 1
+          fi
+          
+          if [ -f "${{ github.event.inputs.bundle_zip }}" ]; then
+            echo "  ✅ ${{ github.event.inputs.bundle_zip }} exists"
+          else
+            echo "  ❌ ${{ github.event.inputs.bundle_zip }} NOT found!"
+            ls -la
+            exit 1
+          fi
 
-      # ========== GENERATE ytkace.plist FOR YOUTUBE ==========
-      - name: Generate ${{ env.TWEAK_NAME }}.plist
+      - name: Set environment variables
         run: |
-          cat > ${{ env.TWEAK_NAME }}.plist << 'EOF'
+          echo "TWEAK_NAME=${{ github.event.inputs.tweak_name }}" >> $GITHUB_ENV
+          echo "PACKAGE_ID=${{ github.event.inputs.package_id }}" >> $GITHUB_ENV
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "MAINTAINER=${{ github.event.inputs.maintainer }}" >> $GITHUB_ENV
+          echo "DESCRIPTION=${{ github.event.inputs.description }}" >> $GITHUB_ENV
+          echo "BUNDLE_ID=${{ github.event.inputs.bundle_id }}" >> $GITHUB_ENV
+          echo "DYLIB_FILE=${{ github.event.inputs.dylib_file }}" >> $GITHUB_ENV
+          echo "BUNDLE_ZIP=${{ github.event.inputs.bundle_zip }}" >> $GITHUB_ENV
+          echo "CREATE_RELEASE=${{ github.event.inputs.create_release }}" >> $GITHUB_ENV
+          echo "ADDITIONAL_PLISTS=${{ github.event.inputs.additional_plists }}" >> $GITHUB_ENV
+          echo "ADDITIONAL_BUNDLE_IDS=${{ github.event.inputs.additional_bundle_ids }}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+
+      - name: Generate main plist
+        run: |
+          echo "📦 Generating ${{ env.TWEAK_NAME }}.plist..."
+          cat > ${{ env.TWEAK_NAME }}.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -31,125 +117,146 @@ jobs:
               <dict>
                   <key>Bundles</key>
                   <array>
-                      <string>com.google.ios.youtube</string>
+                      <string>${{ env.BUNDLE_ID }}</string>
                   </array>
               </dict>
           </dict>
           </plist>
           EOF
 
-       # ========== GENERATE another.plist ==========
-      #- name: Generate file.plist
-      #  run: |
-      #    cat > file.plist << 'EOF'
-      #    <?xml version="1.0" encoding="UTF-8"?>
-      #    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-      #    <plist version="1.0">
-      #    <dict>
-      #        <key>Filter</key>
-      #        <dict>
-      #            <key>Bundles</key>
-      #            <array>
-      #                <string>com.google.ios.youtube</string>
-      #            </array>
-      #        </dict>
-      #    </dict>
-      #    </plist>
-      #    EOF
-
-       # ========== UNZIP BUNDLE ==========
-      - name: Unzip bundle
-        run: unzip ${{ env.TWEAK_NAME }}.bundle.zip -d .
-
-      # ========== ROOTFUL ==========
-      - name: Create Rootful structure
+      - name: Generate additional plists
+        if: env.ADDITIONAL_PLISTS != ''
         run: |
+          echo "📦 Generating additional plists..."
+          
+          IFS=' ' read -ra PLIST_ARRAY <<< "$ADDITIONAL_PLISTS"
+          IFS=' ' read -ra BUNDLE_ARRAY <<< "$ADDITIONAL_BUNDLE_IDS"
+          
+          for i in "${!PLIST_ARRAY[@]}"; do
+            PLIST_NAME="${PLIST_ARRAY[$i]}"
+            PLIST_FILE="${PLIST_NAME}.plist"
+            
+            if [ $i -lt ${#BUNDLE_ARRAY[@]} ]; then
+              BUNDLE="${BUNDLE_ARRAY[$i]}"
+            else
+              BUNDLE="${{ env.BUNDLE_ID }}"
+            fi
+            
+            echo "  Generating: $PLIST_FILE (bundle: $BUNDLE)"
+            
+            cat > "$PLIST_FILE" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>Filter</key>
+              <dict>
+                  <key>Bundles</key>
+                  <array>
+                      <string>${BUNDLE}</string>
+                  </array>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+          done
+
+      - name: Unzip bundle
+        run: |
+          echo "📦 Extracting bundle..."
+          unzip -q ${{ env.BUNDLE_ZIP }} -d .
+
+      - name: Build Rootful DEB
+        run: |
+          echo "📦 Building Rootful DEB..."
+          
           mkdir -p ${{ env.TWEAK_NAME }}-rootful/DEBIAN
           mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}"
-
-      - name: Copy files Rootful
-        run: |
-          cp ${{ env.TWEAK_NAME }}.dylib ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          
+          cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+          
+          if [ -n "$ADDITIONAL_PLISTS" ]; then
+            for plist in $ADDITIONAL_PLISTS; do
+              if [ -f "${plist}.plist" ]; then
+                cp "${plist}.plist" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+              fi
+            done
+          fi
+          
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
-
-      - name: Create control Rootful
-        run: |
+          
           cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
           Package: ${{ env.PACKAGE_ID }}
           Name: ${{ env.TWEAK_NAME }}
           Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm
-          Description: ${{ env.TWEAK_NAME }} tweak for YouTube
-          Maintainer: ace
+          Description: ${{ env.DESCRIPTION }}
+          Maintainer: ${{ env.MAINTAINER }}
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
+          
+          dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
-      - name: Build Rootful DEB
-        run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
-
-      - name: Fix DEB ownership and permissions
+      - name: Build Rootless DEB
         run: |
-          sudo chown $USER:$USER *.deb
-          chmod 644 *.deb
-          ls -l *.deb
-      # ========== ROOTLESS ==========
-      - name: Create Rootless structure
-        run: |
+          echo "📦 Building Rootless DEB..."
+          
           mkdir -p ${{ env.TWEAK_NAME }}-rootless/DEBIAN
           mkdir -p ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
-
-      - name: Copy files Rootless
-        run: |
-          cp ${{ env.TWEAK_NAME }}.dylib ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          
+          cp ${{ env.DYLIB_FILE }} ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
           cp ${{ env.TWEAK_NAME }}.plist ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          
+          if [ -n "$ADDITIONAL_PLISTS" ]; then
+            for plist in $ADDITIONAL_PLISTS; do
+              if [ -f "${plist}.plist" ]; then
+                cp "${plist}.plist" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
+              fi
+            done
+          fi
+          
           cp -r ${{ env.TWEAK_NAME }}.bundle "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}/"
-
-      - name: Create control Rootless
-        run: |
+          
           cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/control << EOF
           Package: ${{ env.PACKAGE_ID }}.rootless
           Name: ${{ env.TWEAK_NAME }} (Rootless)
           Version: ${{ env.VERSION }}
           Architecture: iphoneos-arm64
-          Description: ${{ env.TWEAK_NAME }} tweak for YouTube - Rootless
-          Maintainer: ace
+          Description: ${{ env.DESCRIPTION }} - Rootless
+          Maintainer: ${{ env.MAINTAINER }}
           Section: Tweaks
           Depends: mobilesubstrate
           EOF
+          
+          dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
 
-      - name: Build Rootless DEB
-        run: dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
-
-      - name: Fix DEB ownership and permissions
+      - name: List built packages
         run: |
-          sudo chown $USER:$USER *.deb
-          chmod 644 *.deb
-          ls -l *.deb
+          echo "📦 Built packages:"
+          ls -la *.deb
+          echo ""
+          echo "📊 Package statistics:"
+          echo "  - Tweak: ${{ env.TWEAK_NAME }}"
+          echo "  - Version: ${{ env.VERSION }}"
+          echo "  - Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
+          echo "  - Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
 
-      # ========== UPLOAD TO ARTIFACTS ==========
-      #- name: Upload DEBs
-      #  uses: actions/upload-artifact@v4
-      #  with:
-      #    name: ${{ env.TWEAK_NAME }}-v${{ env.VERSION }}-debs
-      #    path: |
-      #      ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
-      #      ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
-      #    retention-days: 1
-
-      # Upload to release
       - name: Create Release
+        if: env.CREATE_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ytlite
+          tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.TWEAK_NAME }} v${{ env.VERSION }}
           files: |
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
             ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
           body: ""
           generate_release_notes: false
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
