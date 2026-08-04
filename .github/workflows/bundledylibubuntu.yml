@@ -26,7 +26,7 @@ on:
       description:
         description: 'Package description'
         required: true
-        default: 'YTKACE tweak for YouTube'
+        default: 'tweak for YouTube'
         type: string
       bundle_id:
         description: 'Bundle ID to inject into (e.g., com.google.ios.youtube)'
@@ -36,12 +36,12 @@ on:
       dylib_files:
         description: 'Space-separated list of dylib files or zips (e.g., YTKACE.dylib libYTKPlus.dylib.zip)'
         required: true
-        default: 'YTKACE.dylib'
+        default: ''
         type: string
       bundle_zip:
         description: 'Bundle zip filename (e.g., YTKACE.bundle.zip)'
         required: true
-        default: 'YTKACE.bundle.zip'
+        default: ''
         type: string
       create_release:
         description: 'Create GitHub release?'
