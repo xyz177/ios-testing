@@ -26,7 +26,7 @@ on:
       description:
         description: 'Package description'
         required: true
-        default: 'tweak for YouTube'
+        default: 'YTKACE tweak for YouTube'
         type: string
       bundle_id:
         description: 'Bundle ID to inject into (e.g., com.google.ios.youtube)'
@@ -36,12 +36,17 @@ on:
       dylib_files:
         description: 'Space-separated list of dylib files or zips (e.g., YTKACE.dylib libYTKPlus.dylib.zip)'
         required: true
+        default: 'YTKACE.dylib'
+        type: string
+      exclude_plist:
+        description: 'Space-separated list of dylib names to exclude from plist generation (e.g., libYTKPlus extra) - without .dylib extension'
+        required: false
         default: ''
         type: string
       bundle_zip:
         description: 'Bundle zip filename (e.g., YTKACE.bundle.zip)'
         required: true
-        default: ''
+        default: 'YTKACE.bundle.zip'
         type: string
       create_release:
         description: 'Create GitHub release?'
@@ -64,8 +69,6 @@ jobs:
       - name: Check files exist
         run: |
           echo "📂 Checking files..."
-          
-          # Check each dylib file
           DYLIB_FILES="${{ github.event.inputs.dylib_files }}"
           for file in $DYLIB_FILES; do
             if [ -f "$file" ]; then
@@ -94,6 +97,7 @@ jobs:
           echo "DESCRIPTION=${{ github.event.inputs.description }}" >> $GITHUB_ENV
           echo "BUNDLE_ID=${{ github.event.inputs.bundle_id }}" >> $GITHUB_ENV
           echo "DYLIB_FILES=${{ github.event.inputs.dylib_files }}" >> $GITHUB_ENV
+          echo "EXCLUDE_PLIST=${{ github.event.inputs.exclude_plist }}" >> $GITHUB_ENV
           echo "BUNDLE_ZIP=${{ github.event.inputs.bundle_zip }}" >> $GITHUB_ENV
           echo "CREATE_RELEASE=${{ github.event.inputs.create_release }}" >> $GITHUB_ENV
           echo "RELEASE_TAG=${{ github.event.inputs.tweak_name }}-${{ github.event.inputs.version }}" >> $GITHUB_ENV
@@ -102,80 +106,72 @@ jobs:
         run: |
           echo "📦 Processing dylib files..."
           DYLIB_FILES="${{ env.DYLIB_FILES }}"
-          EXTRACTED_DYLIB_NAMES=""
           DYLIB_COUNT=0
           
           mkdir -p dylib_extracted
           
           for file in $DYLIB_FILES; do
-            # Check if it's a zip file
             if [[ "$file" == *.zip ]] || [[ "$file" == *.ZIP ]]; then
               echo "  Extracting zipped dylib: $file"
               unzip -q "$file" -d dylib_extracted/
               DYLIB_COUNT=$((DYLIB_COUNT + 1))
             else
-              # It's a direct .dylib file - copy it to the extracted folder
               echo "  Using direct dylib: $file"
               cp "$file" dylib_extracted/
               DYLIB_COUNT=$((DYLIB_COUNT + 1))
             fi
           done
           
-          # Get all dylib names (without path)
+          # Get all dylib names
           for dylib in dylib_extracted/*.dylib; do
             if [ -f "$dylib" ]; then
               DYLIB_NAME=$(basename "$dylib")
               echo "  Found dylib: $DYLIB_NAME"
-              if [ -z "$EXTRACTED_DYLIB_NAMES" ]; then
-                EXTRACTED_DYLIB_NAMES="$DYLIB_NAME"
-              else
-                EXTRACTED_DYLIB_NAMES="$EXTRACTED_DYLIB_NAMES $DYLIB_NAME"
-              fi
             fi
           done
           
-          if [ -z "$EXTRACTED_DYLIB_NAMES" ]; then
+          if [ -z "$(ls -A dylib_extracted/*.dylib 2>/dev/null)" ]; then
             echo "  ❌ No dylib files found!"
             exit 1
           fi
           
-          echo "EXTRACTED_DYLIB_NAMES=$EXTRACTED_DYLIB_NAMES" >> $GITHUB_ENV
           echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
-          echo ""
           echo "📊 Total dylib files: $DYLIB_COUNT"
 
-      - name: Generate main plist
-        run: |
-          echo "📦 Generating ${{ env.TWEAK_NAME }}.plist..."
-          cat > ${{ env.TWEAK_NAME }}.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>Filter</key>
-              <dict>
-                  <key>Bundles</key>
-                  <array>
-                      <string>${{ env.BUNDLE_ID }}</string>
-                  </array>
-              </dict>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Generate plists for each dylib
+      - name: Generate plists for each dylib (with exclusions)
         run: |
           echo "📦 Generating plist files for each dylib..."
           PLIST_COUNT=0
+          SKIPPED_COUNT=0
+          
+          # Convert exclude list to array
+          EXCLUDE_ARRAY=()
+          if [ -n "${{ env.EXCLUDE_PLIST }}" ]; then
+            IFS=' ' read -ra EXCLUDE_ARRAY <<< "${{ env.EXCLUDE_PLIST }}"
+            echo "  Excluding plist generation for: ${EXCLUDE_ARRAY[*]}"
+          fi
           
           for dylib in dylib_extracted/*.dylib; do
             if [ -f "$dylib" ]; then
               DYLIB_NAME=$(basename "$dylib" .dylib)
-              PLIST_FILE="${DYLIB_NAME}.plist"
               
-              echo "  Generating: $PLIST_FILE"
+              # Check if this dylib should be excluded
+              SHOULD_SKIP=false
+              for exclude in "${EXCLUDE_ARRAY[@]}"; do
+                if [[ "$DYLIB_NAME" == "$exclude" ]]; then
+                  SHOULD_SKIP=true
+                  break
+                fi
+              done
               
-              cat > "$PLIST_FILE" << EOF
+              if [ "$SHOULD_SKIP" = true ]; then
+                echo "  ⏭️  Skipping plist for: $DYLIB_NAME"
+                SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+              else
+                PLIST_FILE="${DYLIB_NAME}.plist"
+                echo "  Generating: $PLIST_FILE"
+                
+                cat > "$PLIST_FILE" << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -184,28 +180,31 @@ jobs:
               <dict>
                   <key>Bundles</key>
                   <array>
-                      <string>${{ env.BUNDLE_ID }}</string>
+                      <string>com.google.ios.youtube</string>
                   </array>
               </dict>
           </dict>
           </plist>
           EOF
-              
-              PLIST_COUNT=$((PLIST_COUNT + 1))
+                
+                PLIST_COUNT=$((PLIST_COUNT + 1))
+              fi
             fi
           done
           
           echo "PLIST_COUNT=$PLIST_COUNT" >> $GITHUB_ENV
+          echo "SKIPPED_COUNT=$SKIPPED_COUNT" >> $GITHUB_ENV
+          echo ""
+          echo "📊 Plist files generated: $PLIST_COUNT"
+          echo "📊 Plist files skipped: $SKIPPED_COUNT"
 
       - name: Extract bundle zip
         run: |
           echo "📦 Extracting bundle zip..."
           BUNDLE_ZIP="${{ env.BUNDLE_ZIP }}"
           
-          # Extract the bundle zip
           unzip -q "$BUNDLE_ZIP" -d .
           
-          # Find the extracted .bundle directory
           EXTRACTED_BUNDLE=$(find . -maxdepth 2 -type d -name "*.bundle" ! -path "./.*" | head -1)
           
           if [ -n "$EXTRACTED_BUNDLE" ]; then
@@ -213,50 +212,10 @@ jobs:
             echo "  ✅ Found bundle: $BUNDLE_DIR_NAME"
             echo "BUNDLE_DIR_NAME=$BUNDLE_DIR_NAME" >> $GITHUB_ENV
           else
-            echo "  ⚠️  No .bundle found after extraction!"
-            echo "  Contents of current directory:"
+            echo "  ⚠️  No .bundle found!"
             ls -la
             exit 1
           fi
-
-      - name: Build Rootful DEB
-        run: |
-          echo "📦 Building Rootful DEB..."
-          
-          mkdir -p ${{ env.TWEAK_NAME }}-rootful/DEBIAN
-          mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
-          mkdir -p "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}"
-          
-          # Copy all dylib files
-          for dylib in dylib_extracted/*.dylib; do
-            if [ -f "$dylib" ]; then
-              cp "$dylib" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied: $(basename "$dylib")"
-            fi
-          done
-          
-          # Copy all plist files
-          for plist in *.plist; do
-            if [ -f "$plist" ]; then
-              cp "$plist" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied: $plist"
-            fi
-          done
-          
-          cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
-          
-          cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
-          Package: ${{ env.PACKAGE_ID }}
-          Name: ${{ env.TWEAK_NAME }}
-          Version: ${{ env.VERSION }}
-          Architecture: iphoneos-arm
-          Description: ${{ env.DESCRIPTION }}
-          Maintainer: ${{ env.MAINTAINER }}
-          Section: Tweaks
-          Depends: mobilesubstrate
-          EOF
-          
-          dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
       - name: Build Rootless DEB
         run: |
@@ -270,15 +229,15 @@ jobs:
           for dylib in dylib_extracted/*.dylib; do
             if [ -f "$dylib" ]; then
               cp "$dylib" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied: $(basename "$dylib")"
+              echo "  ✅ Copied dylib: $(basename "$dylib")"
             fi
           done
           
-          # Copy all plist files
+          # Copy all plist files (only the ones that were generated)
           for plist in *.plist; do
             if [ -f "$plist" ]; then
               cp "$plist" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied: $plist"
+              echo "  ✅ Copied plist: $plist"
             fi
           done
           
@@ -292,10 +251,63 @@ jobs:
           Description: ${{ env.DESCRIPTION }} - Rootless
           Maintainer: ${{ env.MAINTAINER }}
           Section: Tweaks
-          Depends: mobilesubstrate
+          Depends: mobilesubstrate (>= 0.9.5000)
           EOF
           
+          cat > ${{ env.TWEAK_NAME }}-rootless/DEBIAN/postinst << 'EOF'
+          #!/bin/sh
+          chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true
+          chmod 755 /var/jb/Library/Application\ Support/*/*.bundle 2>/dev/null || true
+          echo "Respring your device for changes to take effect."
+          exit 0
+          EOF
+          chmod 755 ${{ env.TWEAK_NAME }}-rootless/DEBIAN/postinst
+          
           dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+
+      - name: Build Rootful DEB
+        run: |
+          echo "📦 Building Rootful DEB..."
+          
+          mkdir -p ${{ env.TWEAK_NAME }}-rootful/DEBIAN
+          mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}"
+          
+          for dylib in dylib_extracted/*.dylib; do
+            if [ -f "$dylib" ]; then
+              cp "$dylib" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+            fi
+          done
+          
+          for plist in *.plist; do
+            if [ -f "$plist" ]; then
+              cp "$plist" ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries/
+            fi
+          done
+          
+          cp -r "${{ env.BUNDLE_DIR_NAME }}" "${{ env.TWEAK_NAME }}-rootful/Library/Application Support/${{ env.TWEAK_NAME }}/"
+          
+          cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/control << EOF
+          Package: ${{ env.PACKAGE_ID }}
+          Name: ${{ env.TWEAK_NAME }}
+          Version: ${{ env.VERSION }}
+          Architecture: iphoneos-arm
+          Description: ${{ env.DESCRIPTION }}
+          Maintainer: ${{ env.MAINTAINER }}
+          Section: Tweaks
+          Depends: mobilesubstrate (>= 0.9.5000)
+          EOF
+          
+          cat > ${{ env.TWEAK_NAME }}-rootful/DEBIAN/postinst << 'EOF'
+          #!/bin/sh
+          chmod 755 /Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true
+          chmod 755 /Library/Application\ Support/*/*.bundle 2>/dev/null || true
+          echo "Respring your device for changes to take effect."
+          exit 0
+          EOF
+          chmod 755 ${{ env.TWEAK_NAME }}-rootful/DEBIAN/postinst
+          
+          dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
 
       - name: Build Roothide DEB
         run: |
@@ -305,19 +317,15 @@ jobs:
           mkdir -p ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-roothide/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          # Copy all dylib files
           for dylib in dylib_extracted/*.dylib; do
             if [ -f "$dylib" ]; then
               cp "$dylib" ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied: $(basename "$dylib")"
             fi
           done
           
-          # Copy all plist files
           for plist in *.plist; do
             if [ -f "$plist" ]; then
               cp "$plist" ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied: $plist"
             fi
           done
           
@@ -334,6 +342,15 @@ jobs:
           Depends: ellekit (>= 1.0.0)
           EOF
           
+          cat > ${{ env.TWEAK_NAME }}-roothide/DEBIAN/postinst << 'EOF'
+          #!/bin/sh
+          chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/*.dylib 2>/dev/null || true
+          chmod 755 /var/jb/Library/Application\ Support/*/*.bundle 2>/dev/null || true
+          echo "Respring your device for changes to take effect."
+          exit 0
+          EOF
+          chmod 755 ${{ env.TWEAK_NAME }}-roothide/DEBIAN/postinst
+          
           dpkg-deb -b ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
 
       - name: List built packages
@@ -347,11 +364,7 @@ jobs:
           echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
           echo "  - Dylib count: ${{ env.DYLIB_COUNT }}"
           echo "  - Plist count: ${{ env.PLIST_COUNT }}"
-          echo "  - Bundle dir: ${{ env.BUNDLE_DIR_NAME }}"
-          echo ""
-          echo "  📱 Rootful: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb"
-          echo "  📱 Rootless: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb"
-          echo "  📱 Roothide: ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb"
+          echo "  - Plist skipped: ${{ env.SKIPPED_COUNT }}"
 
       - name: Create Release
         if: env.CREATE_RELEASE == 'true'
