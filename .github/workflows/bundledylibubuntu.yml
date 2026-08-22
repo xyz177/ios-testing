@@ -11,7 +11,7 @@ on:
       package_id:
         description: 'Package identifier (e.g., com.yourrepo.ytkace)'
         required: true
-        default: 'com.youtube'
+        default: 'com.dvntdm.ytlite'
         type: string
       version:
         description: 'Package version (e.g., 1.0.0)'
@@ -26,7 +26,7 @@ on:
       description:
         description: 'Package description'
         required: true
-        default: 'tweak for YouTube'
+        default: 'YTKACE tweak for YouTube'
         type: string
       bundle_id:
         description: 'Bundle ID to inject into (e.g., com.google.ios.youtube)'
@@ -39,7 +39,7 @@ on:
         default: 'YTKACE.dylib'
         type: string
       exclude_plist:
-        description: 'Space-separated list of dylib names to exclude from plist generation (e.g., libYTKPlus extra) - without .dylib extension'
+        description: 'Space-separated list of dylib names to exclude from plist generation'
         required: false
         default: ''
         type: string
@@ -48,6 +48,17 @@ on:
         required: true
         default: 'YTKACE.bundle.zip'
         type: string
+      compression:
+        description: 'Compression level (none, gzip, xz, bzip2, zstd)'
+        required: true
+        default: 'xz'
+        type: choice
+        options:
+          - 'none'
+          - 'gzip'
+          - 'bzip2'
+          - 'xz'
+          - 'zstd'
       create_release:
         description: 'Create GitHub release?'
         required: true
@@ -64,7 +75,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev unzip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev unzip
+          # Install zstd if needed
+          if [ "${{ github.event.inputs.compression }}" = "zstd" ]; then
+            sudo apt-get install -y zstd
+          fi
 
       - name: Check files exist
         run: |
@@ -99,6 +116,7 @@ jobs:
           echo "DYLIB_FILES=${{ github.event.inputs.dylib_files }}" >> $GITHUB_ENV
           echo "EXCLUDE_PLIST=${{ github.event.inputs.exclude_plist }}" >> $GITHUB_ENV
           echo "BUNDLE_ZIP=${{ github.event.inputs.bundle_zip }}" >> $GITHUB_ENV
+          echo "COMPRESSION=${{ github.event.inputs.compression }}" >> $GITHUB_ENV
           echo "CREATE_RELEASE=${{ github.event.inputs.create_release }}" >> $GITHUB_ENV
           echo "RELEASE_TAG=${{ github.event.inputs.tweak_name }}-${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
@@ -122,40 +140,28 @@ jobs:
             fi
           done
           
-          # Get all dylib names
-          for dylib in dylib_extracted/*.dylib; do
-            if [ -f "$dylib" ]; then
-              DYLIB_NAME=$(basename "$dylib")
-              echo "  Found dylib: $DYLIB_NAME"
-            fi
-          done
-          
           if [ -z "$(ls -A dylib_extracted/*.dylib 2>/dev/null)" ]; then
             echo "  ❌ No dylib files found!"
             exit 1
           fi
           
           echo "DYLIB_COUNT=$DYLIB_COUNT" >> $GITHUB_ENV
-          echo "📊 Total dylib files: $DYLIB_COUNT"
 
       - name: Generate plists for each dylib (with exclusions)
         run: |
-          echo "📦 Generating plist files for each dylib..."
+          echo "📦 Generating plist files..."
           PLIST_COUNT=0
           SKIPPED_COUNT=0
           
-          # Convert exclude list to array
           EXCLUDE_ARRAY=()
           if [ -n "${{ env.EXCLUDE_PLIST }}" ]; then
             IFS=' ' read -ra EXCLUDE_ARRAY <<< "${{ env.EXCLUDE_PLIST }}"
-            echo "  Excluding plist generation for: ${EXCLUDE_ARRAY[*]}"
           fi
           
           for dylib in dylib_extracted/*.dylib; do
             if [ -f "$dylib" ]; then
               DYLIB_NAME=$(basename "$dylib" .dylib)
               
-              # Check if this dylib should be excluded
               SHOULD_SKIP=false
               for exclude in "${EXCLUDE_ARRAY[@]}"; do
                 if [[ "$DYLIB_NAME" == "$exclude" ]]; then
@@ -194,16 +200,11 @@ jobs:
           
           echo "PLIST_COUNT=$PLIST_COUNT" >> $GITHUB_ENV
           echo "SKIPPED_COUNT=$SKIPPED_COUNT" >> $GITHUB_ENV
-          echo ""
-          echo "📊 Plist files generated: $PLIST_COUNT"
-          echo "📊 Plist files skipped: $SKIPPED_COUNT"
 
       - name: Extract bundle zip
         run: |
           echo "📦 Extracting bundle zip..."
-          BUNDLE_ZIP="${{ env.BUNDLE_ZIP }}"
-          
-          unzip -q "$BUNDLE_ZIP" -d .
+          unzip -q "${{ env.BUNDLE_ZIP }}" -d .
           
           EXTRACTED_BUNDLE=$(find . -maxdepth 2 -type d -name "*.bundle" ! -path "./.*" | head -1)
           
@@ -219,25 +220,21 @@ jobs:
 
       - name: Build Rootless DEB
         run: |
-          echo "📦 Building Rootless DEB..."
+          echo "📦 Building Rootless DEB with ${{ env.COMPRESSION }} compression..."
           
           mkdir -p ${{ env.TWEAK_NAME }}-rootless/DEBIAN
           mkdir -p ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries
           mkdir -p "${{ env.TWEAK_NAME }}-rootless/var/jb/Library/Application Support/${{ env.TWEAK_NAME }}"
           
-          # Copy all dylib files
           for dylib in dylib_extracted/*.dylib; do
             if [ -f "$dylib" ]; then
               cp "$dylib" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied dylib: $(basename "$dylib")"
             fi
           done
           
-          # Copy all plist files (only the ones that were generated)
           for plist in *.plist; do
             if [ -f "$plist" ]; then
               cp "$plist" ${{ env.TWEAK_NAME }}-rootless/var/jb/Library/MobileSubstrate/DynamicLibraries/
-              echo "  ✅ Copied plist: $plist"
             fi
           done
           
@@ -263,11 +260,31 @@ jobs:
           EOF
           chmod 755 ${{ env.TWEAK_NAME }}-rootless/DEBIAN/postinst
           
-          dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+          # Build with compression
+          case "${{ env.COMPRESSION }}" in
+            "none")
+              dpkg-deb -b -Znone ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+              ;;
+            "gzip")
+              dpkg-deb -b -Zgzip ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+              ;;
+            "bzip2")
+              dpkg-deb -b -Zbzip2 ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+              ;;
+            "xz")
+              dpkg-deb -b -Zxz ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+              ;;
+            "zstd")
+              dpkg-deb -b -Zzstd ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+              ;;
+            *)
+              dpkg-deb -b ${{ env.TWEAK_NAME }}-rootless ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_rootless_iphoneos-arm64.deb
+              ;;
+          esac
 
       - name: Build Rootful DEB
         run: |
-          echo "📦 Building Rootful DEB..."
+          echo "📦 Building Rootful DEB with ${{ env.COMPRESSION }} compression..."
           
           mkdir -p ${{ env.TWEAK_NAME }}-rootful/DEBIAN
           mkdir -p ${{ env.TWEAK_NAME }}-rootful/Library/MobileSubstrate/DynamicLibraries
@@ -307,11 +324,30 @@ jobs:
           EOF
           chmod 755 ${{ env.TWEAK_NAME }}-rootful/DEBIAN/postinst
           
-          dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+          case "${{ env.COMPRESSION }}" in
+            "none")
+              dpkg-deb -b -Znone ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+              ;;
+            "gzip")
+              dpkg-deb -b -Zgzip ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+              ;;
+            "bzip2")
+              dpkg-deb -b -Zbzip2 ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+              ;;
+            "xz")
+              dpkg-deb -b -Zxz ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+              ;;
+            "zstd")
+              dpkg-deb -b -Zzstd ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+              ;;
+            *)
+              dpkg-deb -b ${{ env.TWEAK_NAME }}-rootful ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_iphoneos-arm.deb
+              ;;
+          esac
 
       - name: Build Roothide DEB
         run: |
-          echo "📦 Building Roothide DEB..."
+          echo "📦 Building Roothide DEB with ${{ env.COMPRESSION }} compression..."
           
           mkdir -p ${{ env.TWEAK_NAME }}-roothide/DEBIAN
           mkdir -p ${{ env.TWEAK_NAME }}-roothide/var/jb/Library/MobileSubstrate/DynamicLibraries
@@ -351,20 +387,37 @@ jobs:
           EOF
           chmod 755 ${{ env.TWEAK_NAME }}-roothide/DEBIAN/postinst
           
-          dpkg-deb -b ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+          case "${{ env.COMPRESSION }}" in
+            "none")
+              dpkg-deb -b -Znone ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+              ;;
+            "gzip")
+              dpkg-deb -b -Zgzip ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+              ;;
+            "bzip2")
+              dpkg-deb -b -Zbzip2 ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+              ;;
+            "xz")
+              dpkg-deb -b -Zxz ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+              ;;
+            "zstd")
+              dpkg-deb -b -Zzstd ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+              ;;
+            *)
+              dpkg-deb -b ${{ env.TWEAK_NAME }}-roothide ${{ env.TWEAK_NAME }}_${{ env.VERSION }}_roothide_iphoneos-arm64e.deb
+              ;;
+          esac
 
-      - name: List built packages
+      - name: Show file sizes
         run: |
-          echo "📦 Built packages:"
-          ls -la *.deb
+          echo "📊 File size comparison:"
           echo ""
-          echo "📊 Package statistics:"
-          echo "  - Tweak: ${{ env.TWEAK_NAME }}"
-          echo "  - Version: ${{ env.VERSION }}"
-          echo "  - Release Tag: ${{ env.RELEASE_TAG }}"
-          echo "  - Dylib count: ${{ env.DYLIB_COUNT }}"
-          echo "  - Plist count: ${{ env.PLIST_COUNT }}"
-          echo "  - Plist skipped: ${{ env.SKIPPED_COUNT }}"
+          echo "  Compression: ${{ env.COMPRESSION }}"
+          echo ""
+          for deb in *.deb; do
+            SIZE=$(du -h "$deb" | cut -f1)
+            echo "  📦 $deb: $SIZE"
+          done
 
       - name: Create Release
         if: env.CREATE_RELEASE == 'true'
